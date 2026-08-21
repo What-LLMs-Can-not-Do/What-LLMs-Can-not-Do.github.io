@@ -2,6 +2,19 @@ import { Link } from "react-router-dom";
 
 const logoSrc = `${import.meta.env.BASE_URL}logo_cropped.png`;
 
+const ORGANIZERS = [
+  { name: "Lukas Edman", affiliation: "TU Munich" },
+  { name: "Kathy Hämmerl", affiliation: "TU Munich" },
+  { name: "Hanna Shcharbakova", affiliation: "TU Munich" },
+  { name: "Lisa Bylinina", affiliation: "Utrecht University" },
+  { name: "Vilém Zouhar", affiliation: "ETH Zurich" },
+  { name: "JiWoo Hwang", affiliation: "TU Munich" },
+  { name: "Sophie Henning", affiliation: "TU Munich" },
+  { name: "Alexander Fraser", affiliation: "TU Munich" },
+  { name: "Maike Züfle", affiliation: "KIT Karlsruhe" },
+  { name: "Marianne de Heer Kloots", affiliation: "University of Amsterdam" },
+];
+
 export default function Home() {
   return (
     <main className="mx-auto max-w-3xl px-4 py-16 sm:px-8">
@@ -36,10 +49,28 @@ export default function Home() {
       <section className="mt-16 space-y-3 border-t border-slate-200 pt-10">
         <h2 className="text-lg font-semibold text-slate-900">About</h2>
         <p className="text-sm leading-relaxed text-slate-600">
-          Placeholder copy for project overview, authors, and citation. Replace
-          this section with abstract text, affiliations, and links as the site
-          comes together.
+          LLMs can do a lot these days, but what <em>can&apos;t</em> they do?
+          Which tasks can humans still do better? We&apos;re looking to gather
+          all of the research into this and make it easily accessible for anyone
+          interested.
         </p>
+        <p className="text-sm leading-relaxed text-slate-600">
+          This project is also aiming to be a workshop at *ACL venues,
+          where we will accept submissions on the capabilities of frontier LLMs.
+          We&apos;ll keep you posted on that!
+        </p>
+      </section>
+
+      <section className="mt-12 space-y-4">
+        <h2 className="text-lg font-semibold text-slate-900">Organizers</h2>
+        <ul className="grid gap-2 sm:grid-cols-2">
+          {ORGANIZERS.map(({ name, affiliation }) => (
+            <li key={name} className="text-sm leading-relaxed text-slate-600">
+              <span className="font-medium text-slate-800">{name}</span>
+              <span className="text-slate-500"> ({affiliation})</span>
+            </li>
+          ))}
+        </ul>
       </section>
     </main>
   );
