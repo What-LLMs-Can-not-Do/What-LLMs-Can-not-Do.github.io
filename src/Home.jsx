@@ -1,8 +1,15 @@
 import { Link } from "react-router-dom";
 
+const logoSrc = `${import.meta.env.BASE_URL}wlcd_logo.jpeg`;
+
 export default function Home() {
   return (
     <main className="mx-auto max-w-3xl px-4 py-16 sm:px-8">
+      <img
+        src={logoSrc}
+        alt="What LLMs Can(not) Do logo: a human beating a robot at rock-paper-scissors"
+        className="mb-8 w-full max-w-md object-contain"
+      />
       <h1 className="!mt-0 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">
         What LLMs Can(not) Do
       </h1>
