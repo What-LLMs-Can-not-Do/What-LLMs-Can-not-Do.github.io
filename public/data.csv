@@ -1,0 +1,6 @@
+id,name,role,dept,status,notes
+1,Alice Johnson,Engineer,Platform,Active,"Leads the infra migration project, coordinating with three teams across two time zones."
+2,Bob Smith,Designer,Product,Active,Working on the new onboarding flow.
+3,Carla Diaz,Manager,Platform,On Leave,"Returning next month, backfilled by Alice in the interim."
+4,David Lee,Engineer,Data,Active,Owns the ETL pipeline rewrite.
+5,Eva Brown,Analyst,Data,Inactive,

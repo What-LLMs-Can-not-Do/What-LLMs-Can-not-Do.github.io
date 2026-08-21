@@ -1,0 +1,32 @@
+Category,Keyword
+Attribute,Multilinguality
+Attribute,Reasoning
+Attribute,Robustness
+Domain,Biology
+Domain,Chemistry
+Domain,Classics
+Domain,Computer Science
+Domain,Culture
+Domain,Engineering
+Domain,Finance
+Domain,Geography
+Domain,History
+Domain,Legal
+Domain,Math
+Domain,Medical
+Domain,Physics
+Domain,Science
+Format,Long-context
+Format,Minimal pairs
+Format,Open-ended
+Format,Q&A
+Language,Code-switching
+Language,Grammar 
+Language,Morphology
+Language,Orthography
+Language,Pragmatics
+Language,Semantics
+Language,Translation
+Task,NER
+Task,NLI
+Task,Summarization
