@@ -58,6 +58,9 @@ function columnWidthClass(columnId) {
   if (WHO_IS_BETTER_LEAF_COLUMNS.has(columnId) || columnId.startsWith("Open-source")) {
     return "max-w-28";
   }
+  if (columnId === "License") {
+    return "max-w-28";
+  }
   if (NARROW_COLUMNS.has(columnId)) {
     return "max-w-40";
   }
@@ -196,6 +199,46 @@ function KeywordFilterBar({ keywords, selected, onToggle, onClear }) {
   );
 }
 
+function CategoryFilterBar({ categories, selected, onToggle, onClear }) {
+  if (categories.length === 0) return null;
+
+  return (
+    <div className="mb-4">
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <span className="text-sm font-medium text-gray-700">Category</span>
+        {selected.size > 0 && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-xs text-gray-500 underline hover:text-gray-700"
+          >
+            Clear filter
+          </button>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {categories.map((category) => {
+          const background = CATEGORY_ROW_COLORS[category] ?? FALLBACK_STYLE.background;
+          const isSelected = selected.has(category);
+          return (
+            <button
+              key={category}
+              type="button"
+              onClick={() => onToggle(category)}
+              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border border-black/10 text-slate-800 transition ${
+                isSelected ? "ring-2 ring-offset-1 ring-slate-400 scale-105" : "opacity-90 hover:opacity-100"
+              }`}
+              style={{ backgroundColor: background }}
+            >
+              {category}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function uniqueSorted(values) {
   const byLower = new Map();
   for (const value of values) {
@@ -212,11 +255,14 @@ function isSelectedIgnoreCase(selected, value) {
 
 function rankMatches(options, query, selected, limit = 10) {
   const q = query.trim().toLowerCase();
-  if (!q) return [];
+  const available = options.filter((option) => !isSelectedIgnoreCase(selected, option));
+
+  if (!q) {
+    return available.length <= 20 ? available.slice(0, limit) : [];
+  }
 
   const scored = [];
-  for (const option of options) {
-    if (isSelectedIgnoreCase(selected, option)) continue;
+  for (const option of available) {
     const lower = option.toLowerCase();
     if (!lower.includes(q)) continue;
     scored.push({ option, score: lower.startsWith(q) ? 0 : 1 });
@@ -333,10 +379,10 @@ function AutocompleteMultiFilter({ label, options, selected, onAdd, onRemove, on
         </div>
         {open && (
           <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
-            {query.trim() === "" ? (
-              <div className="px-3 py-2 text-xs text-slate-500">Type to search…</div>
-            ) : suggestions.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-slate-500">No matches</div>
+            {suggestions.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-slate-500">
+                {query.trim() === "" ? "Type to search…" : "No matches"}
+              </div>
             ) : (
               <ul id={listId} role="listbox" className="max-h-56 overflow-auto py-1">
                 {suggestions.map((option, index) => (
@@ -369,9 +415,25 @@ function rowHasKeyword(row, keyword) {
   return keywords.some((k) => k.toLowerCase() === keyword.toLowerCase());
 }
 
+/** Selecting one of these also matches its aliases (and vice versa). */
+const LANGUAGE_FILTER_ALIASES = {
+  chinese: ["chinese", "mandarin chinese"],
+  "mandarin chinese": ["chinese", "mandarin chinese"],
+  arabic: ["arabic", "standard arabic"],
+  "standard arabic": ["arabic", "standard arabic"],
+};
+
+const LANGUAGE_FILTER_EXTRA_OPTIONS = ["Arabic"];
+
+function languageMatchKeys(language) {
+  const key = language.toLowerCase();
+  return LANGUAGE_FILTER_ALIASES[key] ?? [key];
+}
+
 function rowHasLanguage(row, language) {
-  return splitKeywords(row["Language(s) tested"]).some(
-    (item) => item.toLowerCase() === language.toLowerCase()
+  const targets = new Set(languageMatchKeys(language));
+  return splitKeywords(row["Language(s) tested"]).some((item) =>
+    targets.has(item.toLowerCase())
   );
 }
 
@@ -381,8 +443,19 @@ function rowHasModel(row, model) {
   );
 }
 
+function rowHasLicense(row, license) {
+  return (row.License ?? "").trim().toLowerCase() === license.toLowerCase();
+}
+
+function rowHasCategory(row, category) {
+  return (row["General category"] ?? "").trim().toLowerCase() === category.toLowerCase();
+}
+
 function leafColumn(header, { releaseDates, keywordCategories }) {
   let displayHeader = header.startsWith("Open-source") ? "Open-source" : header;
+  if (header === "Year of publication") {
+    displayHeader = "Year";
+  }
   if (header === "Human benchmark?" || header === "Human comparison?") {
     displayHeader = (
       <>
@@ -482,8 +555,10 @@ export default function Table() {
   const [keywordCategories, setKeywordCategories] = useState(() => new Map());
   const [keywordList, setKeywordList] = useState([]);
   const [selectedKeywords, setSelectedKeywords] = useState(() => new Set());
+  const [selectedCategories, setSelectedCategories] = useState(() => new Set());
   const [selectedLanguages, setSelectedLanguages] = useState(() => new Set());
   const [selectedModels, setSelectedModels] = useState(() => new Set());
+  const [selectedLicenses, setSelectedLicenses] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [sorting, setSorting] = useState([]);
@@ -496,8 +571,8 @@ export default function Table() {
   useEffect(() => {
     const asset = (path) => `${import.meta.env.BASE_URL}${path}`;
     Promise.all([
-      fetch(asset("data3.csv")).then((response) => {
-        if (!response.ok) throw new Error(`Failed to load data3.csv (${response.status})`);
+      fetch(asset("data.csv")).then((response) => {
+        if (!response.ok) throw new Error(`Failed to load data.csv (${response.status})`);
         return response.text();
       }),
       fetch(asset("model_release_dates.csv")).then((response) => {
@@ -523,7 +598,7 @@ export default function Table() {
   }, []);
 
   const languageOptions = useMemo(() => {
-    const values = [];
+    const values = [...LANGUAGE_FILTER_EXTRA_OPTIONS];
     for (const row of data) {
       values.push(...splitKeywords(row["Language(s) tested"]));
     }
@@ -538,8 +613,32 @@ export default function Table() {
     return uniqueSorted(values);
   }, [data]);
 
+  const licenseOptions = useMemo(() => {
+    const values = [];
+    for (const row of data) {
+      const license = row.License?.trim();
+      if (license) values.push(license);
+    }
+    return uniqueSorted(values);
+  }, [data]);
+
+  const categoryOptions = useMemo(() => {
+    const values = [];
+    for (const row of data) {
+      const category = row["General category"]?.trim();
+      if (category) values.push(category);
+    }
+    return uniqueSorted(values);
+  }, [data]);
+
   const filteredData = useMemo(() => {
     return data.filter((row) => {
+      if (
+        selectedCategories.size > 0 &&
+        ![...selectedCategories].some((category) => rowHasCategory(row, category))
+      ) {
+        return false;
+      }
       if (
         selectedKeywords.size > 0 &&
         ![...selectedKeywords].every((keyword) => rowHasKeyword(row, keyword))
@@ -558,9 +657,22 @@ export default function Table() {
       ) {
         return false;
       }
+      if (
+        selectedLicenses.size > 0 &&
+        ![...selectedLicenses].some((license) => rowHasLicense(row, license))
+      ) {
+        return false;
+      }
       return true;
     });
-  }, [data, selectedKeywords, selectedLanguages, selectedModels]);
+  }, [
+    data,
+    selectedCategories,
+    selectedKeywords,
+    selectedLanguages,
+    selectedModels,
+    selectedLicenses,
+  ]);
 
   const columns = useMemo(
     () =>
@@ -576,6 +688,15 @@ export default function Table() {
       const next = new Set(prev);
       if (next.has(keyword)) next.delete(keyword);
       else next.add(keyword);
+      return next;
+    });
+  };
+
+  const toggleCategory = (category) => {
+    setSelectedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
       return next;
     });
   };
@@ -636,6 +757,13 @@ export default function Table() {
 
   return (
     <div className="w-full px-4 py-6 sm:px-8 lg:px-12 text-sm text-left text-gray-800">
+      <CategoryFilterBar
+        categories={categoryOptions}
+        selected={selectedCategories}
+        onToggle={toggleCategory}
+        onClear={() => setSelectedCategories(new Set())}
+      />
+
       <KeywordFilterBar
         keywords={keywordList}
         selected={selectedKeywords}
@@ -643,7 +771,7 @@ export default function Table() {
         onClear={() => setSelectedKeywords(new Set())}
       />
 
-      <div className="mb-4 grid gap-4 sm:grid-cols-2">
+      <div className="mb-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <AutocompleteMultiFilter
           label="Languages"
           options={languageOptions}
@@ -662,6 +790,15 @@ export default function Table() {
           onClear={() => setSelectedModels(new Set())}
           placeholder="Search models…"
         />
+        <AutocompleteMultiFilter
+          label="License"
+          options={licenseOptions}
+          selected={selectedLicenses}
+          onAdd={addToSet(setSelectedLicenses)}
+          onRemove={removeFromSet(setSelectedLicenses)}
+          onClear={() => setSelectedLicenses(new Set())}
+          placeholder="Search licenses…"
+        />
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -679,7 +816,11 @@ export default function Table() {
                 checked={col.getIsVisible()}
                 onChange={col.getToggleVisibilityHandler()}
               />
-              {col.id.startsWith("Open-source") ? "Open-source" : col.id}
+              {col.id.startsWith("Open-source")
+                ? "Open-source"
+                : col.id === "Year of publication"
+                  ? "Year"
+                  : col.id}
             </label>
           ))}
         </div>
