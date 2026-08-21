@@ -3,10 +3,12 @@ Attribute,Multilinguality
 Attribute,Reasoning
 Attribute,Robustness
 Domain,Biology
+Domain,Business
 Domain,Chemistry
 Domain,Classics
 Domain,Computer Science
 Domain,Culture
+Domain,Economics
 Domain,Engineering
 Domain,Finance
 Domain,Geography
@@ -14,19 +16,24 @@ Domain,History
 Domain,Legal
 Domain,Math
 Domain,Medical
+Domain,Philosophy
 Domain,Physics
+Domain,Psychology
 Domain,Science
 Format,Long-context
 Format,Minimal pairs
 Format,Open-ended
 Format,Q&A
+Format,Multiple-choice
 Language,Code-switching
 Language,Grammar 
 Language,Morphology
 Language,Orthography
 Language,Pragmatics
 Language,Semantics
+Language,Phonetics
 Language,Translation
 Task,NER
 Task,NLI
 Task,Summarization
+Task,Text Classification

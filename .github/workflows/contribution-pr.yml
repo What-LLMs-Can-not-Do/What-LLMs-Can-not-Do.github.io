@@ -1,0 +1,136 @@
+name: Contribution issue to PR
+
+on:
+  issues:
+    types: [opened, labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: contribution-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  create-pr:
+    if: >
+      contains(github.event.issue.title, '[Table contribution]') ||
+      contains(join(github.event.issue.labels.*.name, ','), 'table-contribution')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Skip if PR already exists
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          EXISTING=$(gh pr list --state all --head "contribution/issue-${ISSUE_NUMBER}" --json number --jq 'length')
+          if [ "$EXISTING" != "0" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.skip != 'true'
+
+      - name: Ensure contribution label
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create "table-contribution" \
+            --description "Website form submission for the benchmark table" \
+            --color "0E8A16" \
+            --force || true
+          gh issue edit "${{ github.event.issue.number }}" --add-label "table-contribution"
+
+      - name: Build CSV row and open PR
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+        run: |
+          python3 <<'PY'
+          import csv, json, os, pathlib, re, textwrap
+
+          body = os.environ["ISSUE_BODY"]
+          issue_number = os.environ["ISSUE_NUMBER"]
+          issue_url = os.environ["ISSUE_URL"]
+
+          match = re.search(r"```json\s*(\{.*?\})\s*```", body, flags=re.S)
+          if not match:
+              raise SystemExit("Could not find contribution JSON in the issue body")
+
+          data = json.loads(match.group(1))
+          csv_path = pathlib.Path("public/data.csv")
+          text = csv_path.read_text(encoding="utf-8")
+          lines = text.splitlines()
+          header_idx = next(i for i, line in enumerate(lines) if line.startswith("General category,"))
+          header = next(csv.reader([lines[header_idx]]))
+
+          field_map = {
+              "General category": data.get("General category", ""),
+              "Subtopic/Keywords": data.get("Subtopic/Keywords", ""),
+              "Keywords": data.get("Keywords", ""),
+              "Paper title": data.get("Paper title", ""),
+              "License": data.get("License", ""),
+              "Language(s) tested": data.get("Language(s) tested", ""),
+              "Model(s) tested": data.get("Model(s) tested", ""),
+              "Year of publication": data.get("Year of publication", ""),
+              "Link": data.get("Link", ""),
+              "Summary": data.get("Summary", ""),
+              "Human benchmark?": data.get("Human benchmark?", ""),
+              "Closed": data.get("Closed", ""),
+              "Open-weight": data.get("Open-weight", ""),
+              "Open-source (including open training data)": data.get("Open-source", "")
+                  or data.get("Open-source (including open training data)", ""),
+              "Benchmark Example": data.get("Benchmark Example", ""),
+              "Abstract": data.get("Abstract", ""),
+              "Comments?": data.get("Comments", "") or data.get("Comments?", ""),
+          }
+
+          row = [field_map.get(col, "") for col in header]
+          buf = []
+          writer = csv.writer(buf, lineterminator="\n")
+          writer.writerow(row)
+          new_row = buf[0]
+
+          if text and not text.endswith("\n"):
+              text += "\n"
+          csv_path.write_text(text + new_row + "\n", encoding="utf-8")
+
+          paper = (data.get("Paper title") or "submission").strip() or "submission"
+          branch = f"contribution/issue-{issue_number}"
+          pr_title = f"Add table entry: {paper}"
+          pr_body = textwrap.dedent(f"""\
+          ## Table contribution
+
+          Automated PR from {issue_url}.
+
+          Please review the new `public/data.csv` row before merging.
+          """)
+
+          pathlib.Path("/tmp/pr_title.txt").write_text(pr_title, encoding="utf-8")
+          pathlib.Path("/tmp/pr_body.md").write_text(pr_body, encoding="utf-8")
+          pathlib.Path("/tmp/branch.txt").write_text(branch, encoding="utf-8")
+          print(f"Prepared row for {paper!r} on branch {branch}")
+          PY
+
+          BRANCH=$(cat /tmp/branch.txt)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add public/data.csv
+          git commit -m "Add table contribution from #${ISSUE_NUMBER}"
+          git push -u origin "$BRANCH"
+          PR_URL=$(gh pr create \
+            --title "$(cat /tmp/pr_title.txt)" \
+            --body-file /tmp/pr_body.md \
+            --base main \
+            --head "$BRANCH")
+          gh issue comment "$ISSUE_NUMBER" --body "Opened pull request for review: $PR_URL"

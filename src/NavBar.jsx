@@ -1,6 +1,6 @@
 import { NavLink } from "react-router-dom";
 
-const logoSrc = `${import.meta.env.BASE_URL}wlcd_logo.jpeg`;
+const logoSrc = `${import.meta.env.BASE_URL}logo_cropped.png`;
 
 const linkClass = ({ isActive }) =>
   `text-base font-medium transition ${
@@ -28,6 +28,9 @@ export default function NavBar() {
           </NavLink>
           <NavLink to="/table" className={linkClass}>
             Table
+          </NavLink>
+          <NavLink to="/contribute" className={linkClass}>
+            Contribute
           </NavLink>
         </nav>
       </div>
