@@ -196,9 +196,189 @@ function KeywordFilterBar({ keywords, selected, onToggle, onClear }) {
   );
 }
 
+function uniqueSorted(values) {
+  const byLower = new Map();
+  for (const value of values) {
+    const key = value.toLowerCase();
+    if (!byLower.has(key)) byLower.set(key, value);
+  }
+  return [...byLower.values()].sort((a, b) => a.localeCompare(b));
+}
+
+function isSelectedIgnoreCase(selected, value) {
+  const lower = value.toLowerCase();
+  return [...selected].some((item) => item.toLowerCase() === lower);
+}
+
+function rankMatches(options, query, selected, limit = 10) {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+
+  const scored = [];
+  for (const option of options) {
+    if (isSelectedIgnoreCase(selected, option)) continue;
+    const lower = option.toLowerCase();
+    if (!lower.includes(q)) continue;
+    scored.push({ option, score: lower.startsWith(q) ? 0 : 1 });
+  }
+
+  scored.sort((a, b) => a.score - b.score || a.option.localeCompare(b.option));
+  return scored.slice(0, limit).map((item) => item.option);
+}
+
+function AutocompleteMultiFilter({ label, options, selected, onAdd, onRemove, onClear, placeholder }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const rootRef = useRef(null);
+  const listId = `${label.toLowerCase()}-suggestions`;
+
+  const suggestions = useMemo(
+    () => rankMatches(options, query, selected),
+    [options, query, selected]
+  );
+
+  useEffect(() => {
+    const onPointerDown = (event) => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, []);
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [query, open]);
+
+  const addOption = (option) => {
+    onAdd(option);
+    setQuery("");
+    setOpen(true);
+  };
+
+  const onKeyDown = (event) => {
+    if (event.key === "Escape") {
+      setOpen(false);
+      return;
+    }
+    if (event.key === "Backspace" && query === "" && selected.size > 0) {
+      const last = [...selected].at(-1);
+      if (last) onRemove(last);
+      return;
+    }
+    if (!open && (event.key === "ArrowDown" || event.key === "Enter")) {
+      setOpen(true);
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveIndex((index) => Math.min(index + 1, Math.max(suggestions.length - 1, 0)));
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveIndex((index) => Math.max(index - 1, 0));
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const choice = suggestions[activeIndex];
+      if (choice) addOption(choice);
+    }
+  };
+
+  return (
+    <div ref={rootRef} className="min-w-0">
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <span className="text-sm font-medium text-gray-700">{label}</span>
+        {selected.size > 0 && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="text-xs text-gray-500 underline hover:text-gray-700"
+          >
+            Clear filter
+          </button>
+        )}
+      </div>
+      <div className="relative">
+        <div className="flex flex-wrap items-center gap-1.5 rounded border border-slate-200 bg-white px-2 py-1.5 shadow-sm focus-within:border-slate-400">
+          {[...selected].map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => onRemove(value)}
+              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+            >
+              {value}
+              <span aria-hidden="true" className="text-slate-400">
+                ×
+              </span>
+            </button>
+          ))}
+          <input
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={onKeyDown}
+            placeholder={selected.size === 0 ? placeholder : "Add another…"}
+            role="combobox"
+            aria-expanded={open}
+            aria-controls={listId}
+            aria-autocomplete="list"
+            className="min-w-[10rem] flex-1 border-0 bg-transparent px-1 py-0.5 text-sm outline-none"
+          />
+        </div>
+        {open && (
+          <div className="absolute left-0 right-0 top-full z-30 mt-1 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
+            {query.trim() === "" ? (
+              <div className="px-3 py-2 text-xs text-slate-500">Type to search…</div>
+            ) : suggestions.length === 0 ? (
+              <div className="px-3 py-2 text-xs text-slate-500">No matches</div>
+            ) : (
+              <ul id={listId} role="listbox" className="max-h-56 overflow-auto py-1">
+                {suggestions.map((option, index) => (
+                  <li key={option}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={index === activeIndex}
+                      onMouseEnter={() => setActiveIndex(index)}
+                      onClick={() => addOption(option)}
+                      className={`block w-full px-3 py-1.5 text-left text-sm ${
+                        index === activeIndex ? "bg-slate-100 text-slate-900" : "text-slate-700"
+                      }`}
+                    >
+                      {option}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function rowHasKeyword(row, keyword) {
   const keywords = splitKeywords(row.Keywords);
   return keywords.some((k) => k.toLowerCase() === keyword.toLowerCase());
+}
+
+function rowHasLanguage(row, language) {
+  return splitKeywords(row["Language(s) tested"]).some(
+    (item) => item.toLowerCase() === language.toLowerCase()
+  );
+}
+
+function rowHasModel(row, model) {
+  return splitModels(row["Model(s) tested"]).some(
+    (item) => item.toLowerCase() === model.toLowerCase()
+  );
 }
 
 function leafColumn(header, { releaseDates, keywordCategories }) {
@@ -258,10 +438,16 @@ function leafColumn(header, { releaseDates, keywordCategories }) {
 
 function buildColumns(headers, ctx) {
   const whoIsBetterHeaders = headers.filter(isWhoIsBetterColumn);
-  const ordered = [
-    ...headers.filter((header) => header !== "Link"),
-    ...headers.filter((header) => header === "Link"),
-  ];
+  const withoutLink = headers.filter((header) => header !== "Link");
+  const paperIndex = withoutLink.indexOf("Paper title");
+  const ordered =
+    paperIndex === -1
+      ? headers
+      : [
+          ...withoutLink.slice(0, paperIndex + 1),
+          "Link",
+          ...withoutLink.slice(paperIndex + 1),
+        ];
   const columns = [];
   let grouped = false;
 
@@ -296,6 +482,8 @@ export default function Table() {
   const [keywordCategories, setKeywordCategories] = useState(() => new Map());
   const [keywordList, setKeywordList] = useState([]);
   const [selectedKeywords, setSelectedKeywords] = useState(() => new Set());
+  const [selectedLanguages, setSelectedLanguages] = useState(() => new Set());
+  const [selectedModels, setSelectedModels] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [sorting, setSorting] = useState([]);
@@ -334,12 +522,45 @@ export default function Table() {
       .finally(() => setLoading(false));
   }, []);
 
+  const languageOptions = useMemo(() => {
+    const values = [];
+    for (const row of data) {
+      values.push(...splitKeywords(row["Language(s) tested"]));
+    }
+    return uniqueSorted(values);
+  }, [data]);
+
+  const modelOptions = useMemo(() => {
+    const values = [];
+    for (const row of data) {
+      values.push(...splitModels(row["Model(s) tested"]));
+    }
+    return uniqueSorted(values);
+  }, [data]);
+
   const filteredData = useMemo(() => {
-    if (selectedKeywords.size === 0) return data;
-    return data.filter((row) =>
-      [...selectedKeywords].every((keyword) => rowHasKeyword(row, keyword))
-    );
-  }, [data, selectedKeywords]);
+    return data.filter((row) => {
+      if (
+        selectedKeywords.size > 0 &&
+        ![...selectedKeywords].every((keyword) => rowHasKeyword(row, keyword))
+      ) {
+        return false;
+      }
+      if (
+        selectedLanguages.size > 0 &&
+        ![...selectedLanguages].every((language) => rowHasLanguage(row, language))
+      ) {
+        return false;
+      }
+      if (
+        selectedModels.size > 0 &&
+        ![...selectedModels].every((model) => rowHasModel(row, model))
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [data, selectedKeywords, selectedLanguages, selectedModels]);
 
   const columns = useMemo(
     () =>
@@ -355,6 +576,25 @@ export default function Table() {
       const next = new Set(prev);
       if (next.has(keyword)) next.delete(keyword);
       else next.add(keyword);
+      return next;
+    });
+  };
+
+  const addToSet = (setter) => (value) => {
+    setter((prev) => {
+      if (isSelectedIgnoreCase(prev, value)) return prev;
+      const next = new Set(prev);
+      next.add(value);
+      return next;
+    });
+  };
+
+  const removeFromSet = (setter) => (value) => {
+    setter((prev) => {
+      const next = new Set(prev);
+      for (const item of prev) {
+        if (item.toLowerCase() === value.toLowerCase()) next.delete(item);
+      }
       return next;
     });
   };
@@ -402,6 +642,27 @@ export default function Table() {
         onToggle={toggleKeyword}
         onClear={() => setSelectedKeywords(new Set())}
       />
+
+      <div className="mb-4 grid gap-4 sm:grid-cols-2">
+        <AutocompleteMultiFilter
+          label="Languages"
+          options={languageOptions}
+          selected={selectedLanguages}
+          onAdd={addToSet(setSelectedLanguages)}
+          onRemove={removeFromSet(setSelectedLanguages)}
+          onClear={() => setSelectedLanguages(new Set())}
+          placeholder="Search languages…"
+        />
+        <AutocompleteMultiFilter
+          label="Models"
+          options={modelOptions}
+          selected={selectedModels}
+          onAdd={addToSet(setSelectedModels)}
+          onRemove={removeFromSet(setSelectedModels)}
+          onClear={() => setSelectedModels(new Set())}
+          placeholder="Search models…"
+        />
+      </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <input
