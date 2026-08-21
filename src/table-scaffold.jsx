@@ -306,16 +306,17 @@ export default function Table() {
   const scrollRef = useRef(null);
 
   useEffect(() => {
+    const asset = (path) => `${import.meta.env.BASE_URL}${path}`;
     Promise.all([
-      fetch("/data3.csv").then((response) => {
+      fetch(asset("data3.csv")).then((response) => {
         if (!response.ok) throw new Error(`Failed to load data3.csv (${response.status})`);
         return response.text();
       }),
-      fetch("/model_release_dates.csv").then((response) => {
+      fetch(asset("model_release_dates.csv")).then((response) => {
         if (!response.ok) throw new Error(`Failed to load model_release_dates.csv (${response.status})`);
         return response.text();
       }),
-      fetch("/keywords.csv").then((response) => {
+      fetch(asset("keywords.csv")).then((response) => {
         if (!response.ok) throw new Error(`Failed to load keywords.csv (${response.status})`);
         return response.text();
       }),

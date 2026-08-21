@@ -3,9 +3,11 @@ import Home from "./Home.jsx";
 import NavBar from "./NavBar.jsx";
 import Table from "./table-scaffold.jsx";
 
+const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
+
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <NavBar />
       <Routes>
         <Route path="/" element={<Home />} />
