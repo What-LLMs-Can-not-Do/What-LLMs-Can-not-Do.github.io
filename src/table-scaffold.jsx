@@ -87,10 +87,10 @@ function formatCellValue(value) {
 function formatHumanBenchmark(value) {
   const normalized = value?.trim().toLowerCase();
   if (normalized === "yes") {
-    return <span className="text-lg text-green-600 font-medium">✔</span>;
+    return <span className="text-base text-green-600 font-medium sm:text-lg">✔</span>;
   }
   if (normalized === "no") {
-    return <span className="text-lg text-red-600 font-medium">✘</span>;
+    return <span className="text-base text-red-600 font-medium sm:text-lg">✘</span>;
   }
   return value;
 }
@@ -478,7 +478,7 @@ function leafColumn(header, { releaseDates, keywordCategories }) {
             href={value}
             target="_blank"
             rel="noreferrer"
-            className="inline-block text-lg leading-none no-underline"
+            className="inline-block text-base leading-none no-underline sm:text-lg"
             title={value}
             aria-label={value}
           >
@@ -748,15 +748,15 @@ export default function Table() {
   });
 
   if (loading) {
-    return <div className="px-4 py-6 sm:px-8 lg:px-12 text-sm text-gray-600">Loading data…</div>;
+    return <div className="px-4 py-6 sm:px-8 lg:px-12 text-xs text-gray-600 sm:text-sm">Loading data…</div>;
   }
 
   if (error) {
-    return <div className="px-4 py-6 sm:px-8 lg:px-12 text-sm text-red-600">{error}</div>;
+    return <div className="px-4 py-6 sm:px-8 lg:px-12 text-xs text-red-600 sm:text-sm">{error}</div>;
   }
 
   return (
-    <div className="w-full px-4 py-6 sm:px-8 lg:px-12 text-sm text-left text-gray-800">
+    <div className="w-full px-4 py-6 sm:px-8 lg:px-12 text-xs text-left text-gray-800 sm:text-sm">
       <CategoryFilterBar
         categories={categoryOptions}
         selected={selectedCategories}
@@ -928,7 +928,7 @@ export default function Table() {
         </table>
       </div>
 
-      <p className="mt-0 mb-6 pt-2 text-sm text-gray-600">
+      <p className="mt-0 mb-6 pt-2 text-xs text-gray-600 sm:text-sm">
         <sup>†</sup> Open-source models not explicitly tested, however we assume their performance to be less than or equal to closed and open-weight models.
       </p>
     </div>
