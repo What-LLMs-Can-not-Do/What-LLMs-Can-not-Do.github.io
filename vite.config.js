@@ -3,9 +3,9 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => ({
-  // Project Pages URL: https://what-llms-can-not-do.github.io/website/
-  base: mode === "production" ? "/website/" : "/",
+export default defineConfig({
+  // User/org Pages URL: https://what-llms-can-not-do.github.io/
+  base: "/",
   plugins: [react(), tailwindcss()],
   server: {
     watch: {
@@ -14,4 +14,4 @@ export default defineConfig(({ mode }) => ({
       interval: 1000,
     },
   },
-}))
+})
