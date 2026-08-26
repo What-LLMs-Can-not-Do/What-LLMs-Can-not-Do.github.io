@@ -233,6 +233,13 @@ function formatCellValue(value) {
       </>
     );
   }
+  if (value === "Humans (trivial)") {
+    return (
+      <>
+        Humans<sup>‡</sup>
+      </>
+    );
+  }
   return value;
 }
 
@@ -1149,8 +1156,11 @@ export default function Table() {
         </table>
       </div>
 
-      <p className="mt-0 mb-6 pt-2 text-xs text-gray-600 sm:text-sm">
+      <p className="mt-0 mb-2 pt-2 text-xs text-gray-600 sm:text-sm">
         <sup>†</sup> Open-source models not explicitly tested, however we assume their performance to be less than or equal to closed and open-weight models.
+      </p>
+      <p className="mt-0 mb-6 text-xs text-gray-600 sm:text-sm">
+        <sup>‡</sup> Humans were not tested, but the task is trivial so perfect performance is expected.
       </p>
     </div>
   );
