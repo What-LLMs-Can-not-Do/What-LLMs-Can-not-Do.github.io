@@ -6,13 +6,14 @@ const CATEGORIES = [
   "Expert Knowledge",
   "Linguistics",
   "General NLP tasks",
-  "Tasks with reasoning",
+  "Reasoning",
   "Cross-lingual tasks",
 ];
 
 const HUMAN_BENCHMARK_OPTIONS = ["yes", "no", "unclear / other"];
 
 const KEYWORD_STYLES = {
+  Modality: { background: "#ccfbf1", color: "#0f766e", border: "#99f6e4" },
   Attribute: { background: "#ede9fe", color: "#5b21b6", border: "#ddd6fe" },
   Domain: { background: "#e0f2fe", color: "#075985", border: "#bae6fd" },
   Format: { background: "#dcfce7", color: "#166534", border: "#bbf7d0" },
@@ -58,13 +59,17 @@ function buildIssueContent(form) {
     "Submitted via the website form. A workflow will open a pull request that appends this entry to `public/data.csv` for review.",
     "",
     `**Paper:** ${form["Paper title"]}`,
-    `**Link:** ${form.Link}`,
+    `**Paper link:** ${form["Paper Link"]}`,
+    form["Dataset Link"] ? `**Dataset link:** ${form["Dataset Link"]}` : null,
+    form["Other Links"] ? `**Other links:** ${form["Other Links"]}` : null,
     "",
     "```json",
     JSON.stringify(payload, null, 2),
     "```",
     "",
-  ].join("\n");
+  ]
+    .filter((line) => line !== null)
+    .join("\n");
 
   return { title, body };
 }
@@ -85,13 +90,16 @@ const initialForm = {
   "Language(s) tested": "",
   "Model(s) tested": "",
   "Year of publication": "",
-  Link: "",
+  "Paper Link": "",
+  "Dataset Link": "",
+  "Other Links": "",
   Summary: "",
   "Human benchmark?": "",
   Closed: "",
   "Open-weight": "",
   "Open-source": "",
   "Benchmark Example": "",
+  "Benchmark Audio": "",
   Abstract: "",
   Comments: "",
 };
@@ -220,26 +228,43 @@ export default function Contribute() {
               />
             </Field>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Link">
+              <Field label="Paper link">
                 <input
                   required
                   type="url"
                   placeholder="https://"
-                  value={form.Link}
-                  onChange={update("Link")}
+                  value={form["Paper Link"]}
+                  onChange={update("Paper Link")}
                   className={FIELD_CLASS}
                 />
               </Field>
-              <Field label="Year">
+              <Field label="Dataset link">
                 <input
-                  inputMode="numeric"
-                  placeholder="2025"
-                  value={form["Year of publication"]}
-                  onChange={update("Year of publication")}
+                  type="url"
+                  placeholder="https://"
+                  value={form["Dataset Link"]}
+                  onChange={update("Dataset Link")}
                   className={FIELD_CLASS}
                 />
               </Field>
             </div>
+            <Field label="Other links">
+              <input
+                placeholder="Optional extra URLs, separated by spaces"
+                value={form["Other Links"]}
+                onChange={update("Other Links")}
+                className={FIELD_CLASS}
+              />
+            </Field>
+            <Field label="Year">
+              <input
+                inputMode="numeric"
+                placeholder="2025"
+                value={form["Year of publication"]}
+                onChange={update("Year of publication")}
+                className={FIELD_CLASS}
+              />
+            </Field>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="General category">
                 <select
@@ -371,11 +396,25 @@ export default function Contribute() {
                 </Field>
               </div>
             </div>
-            <Field label="Benchmark example">
+            <Field
+              label="Benchmark example"
+              hint="Text and/or .mp3/.wav filenames under public/audio/ (filenames become players)"
+            >
               <textarea
                 rows={4}
                 value={form["Benchmark Example"]}
                 onChange={update("Benchmark Example")}
+                className={FIELD_CLASS}
+              />
+            </Field>
+            <Field
+              label="Benchmark audio"
+              hint="Optional. Filename(s) and/or caption text — e.g. sample.mp3 Transcript of the clip"
+            >
+              <input
+                value={form["Benchmark Audio"]}
+                onChange={update("Benchmark Audio")}
+                placeholder="sample.mp3 Optional caption"
                 className={FIELD_CLASS}
               />
             </Field>

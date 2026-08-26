@@ -1,4 +1,6 @@
 Category,Keyword
+Modality,Text
+Modality,Speech
 Attribute,Multilinguality
 Attribute,Reasoning
 Attribute,Robustness
@@ -25,15 +27,23 @@ Format,Minimal pairs
 Format,Open-ended
 Format,Q&A
 Format,Multiple-choice
+Format,Similarity judgments
+Format,Triplet comparison
 Language,Code-switching
+Language,Lexicon
 Language,Grammar 
+Language,Syntax
 Language,Morphology
 Language,Orthography
 Language,Pragmatics
 Language,Semantics
 Language,Phonetics
-Language,Translation
+Language,Phonology
+Language,Prosody
+Language,Paralinguistics
+Task,Translation
 Task,NER
 Task,NLI
 Task,Summarization
-Task,Text Classification
+Task,Classification
+Task,Data Annotation

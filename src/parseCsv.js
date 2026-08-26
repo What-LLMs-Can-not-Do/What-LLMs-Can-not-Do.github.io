@@ -49,16 +49,88 @@ export function parseCsv(text, delimiter = ",") {
 const EXCLUDED_COLUMNS = new Set([
   "Comments?",
   "Subtopic/Keywords",
+  "Paper Link",
+  "Dataset Link",
+  "Other Links",
+  "Link",
 ]);
 
 const HIDDEN_COLUMNS = new Set([
+  "ID",
   "Abstract",
   "Benchmark Example",
+  "Benchmark Audio",
 ]);
 
+const AUDIO_TOKEN_RE = /\b([A-Za-z0-9][A-Za-z0-9._/-]*\.(?:mp3|wav))\b/gi;
+const AUDIO_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]*\.(mp3|wav)$/i;
+
+function isSafeAudioName(name) {
+  return AUDIO_NAME_RE.test(name) && !name.includes("..");
+}
+
+/**
+ * Pull .mp3/.wav filenames out of a cell that may also contain accompanying text.
+ * Filenames may be comma-separated or embedded in prose.
+ */
+export function parseAudioCell(value) {
+  if (!value?.trim()) return { files: [], text: "" };
+
+  const files = [];
+  const seen = new Set();
+  const text = value
+    .replace(AUDIO_TOKEN_RE, (match) => {
+      const name = match.replace(/^\/+/, "");
+      if (isSafeAudioName(name) && !seen.has(name.toLowerCase())) {
+        seen.add(name.toLowerCase());
+        files.push(name);
+      }
+      return " ";
+    })
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/^[\s,;|/\-–—]+|[\s,;|/\-–—]+$/g, "")
+    .trim();
+
+  return { files, text };
+}
+
+/** @deprecated Prefer parseAudioCell */
+export function splitAudioFiles(value) {
+  return parseAudioCell(value).files;
+}
+
+export function audioMimeType(filename) {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".wav")) return "audio/wav";
+  if (lower.endsWith(".mp3")) return "audio/mpeg";
+  return "application/octet-stream";
+}
+
+/** Index of the real header line (supports legacy and ID-prefixed headers). */
+export function findTableHeaderIndex(text) {
+  const lines = text.split(/\r?\n/);
+  return lines.findIndex(
+    (line) =>
+      line.startsWith("ID,General category,") || line.startsWith("General category,")
+  );
+}
+
 export function parseTableCsv(text) {
-  const start = text.indexOf("General category");
-  if (start === -1) throw new Error("Could not find header row in table CSV");
+  const lines = text.split(/\r?\n/);
+  const headerIdx = findTableHeaderIndex(text);
+  if (headerIdx === -1) throw new Error("Could not find header row in table CSV");
+
+  // Reconstruct from the header line onward without breaking quoted newlines:
+  // locate the character offset of that line start.
+  let start = 0;
+  for (let i = 0; i < headerIdx; i++) {
+    start += lines[i].length;
+    // account for the newline that split removed
+    if (start < text.length && text[start] === "\r") start++;
+    if (start < text.length && text[start] === "\n") start++;
+  }
 
   return parseCsv(text.slice(start)).filter((row) => row["Paper title"]?.trim());
 }
@@ -137,9 +209,12 @@ export function displayHeaders(headers) {
 }
 
 export function defaultColumnVisibility(headers) {
-  return Object.fromEntries(
-    displayHeaders(headers).map((header) => [header, !HIDDEN_COLUMNS.has(header)])
-  );
+  return {
+    ...Object.fromEntries(
+      displayHeaders(headers).map((header) => [header, !HIDDEN_COLUMNS.has(header)])
+    ),
+    Links: true,
+  };
 }
 
 export function isWhoIsBetterColumn(header) {

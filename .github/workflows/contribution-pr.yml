@@ -56,7 +56,7 @@ jobs:
           ISSUE_URL: ${{ github.event.issue.html_url }}
         run: |
           python3 <<'PY'
-          import csv, json, os, pathlib, re, textwrap
+          import csv, io, json, os, pathlib, re, textwrap
 
           body = os.environ["ISSUE_BODY"]
           issue_number = os.environ["ISSUE_NUMBER"]
@@ -70,10 +70,27 @@ jobs:
           csv_path = pathlib.Path("public/data.csv")
           text = csv_path.read_text(encoding="utf-8")
           lines = text.splitlines()
-          header_idx = next(i for i, line in enumerate(lines) if line.startswith("General category,"))
+          header_idx = next(
+              i
+              for i, line in enumerate(lines)
+              if line.startswith("ID,General category,") or line.startswith("General category,")
+          )
           header = next(csv.reader([lines[header_idx]]))
 
+          max_id = 0
+          if "ID" in header:
+              reader = csv.DictReader(io.StringIO("\n".join(lines[header_idx:])))
+              for existing in reader:
+                  raw = (existing.get("ID") or "").strip()
+                  if not raw:
+                      continue
+                  try:
+                      max_id = max(max_id, int(raw))
+                  except ValueError:
+                      pass
+
           field_map = {
+              "ID": str(max_id + 1) if "ID" in header else "",
               "General category": data.get("General category", ""),
               "Subtopic/Keywords": data.get("Subtopic/Keywords", ""),
               "Keywords": data.get("Keywords", ""),
@@ -82,7 +99,10 @@ jobs:
               "Language(s) tested": data.get("Language(s) tested", ""),
               "Model(s) tested": data.get("Model(s) tested", ""),
               "Year of publication": data.get("Year of publication", ""),
-              "Link": data.get("Link", ""),
+              "Paper Link": data.get("Paper Link", "") or data.get("Link", ""),
+              "Dataset Link": data.get("Dataset Link", ""),
+              "Other Links": data.get("Other Links", ""),
+              "Link": data.get("Paper Link", "") or data.get("Link", ""),
               "Summary": data.get("Summary", ""),
               "Human benchmark?": data.get("Human benchmark?", ""),
               "Closed": data.get("Closed", ""),
@@ -90,6 +110,7 @@ jobs:
               "Open-source (including open training data)": data.get("Open-source", "")
                   or data.get("Open-source (including open training data)", ""),
               "Benchmark Example": data.get("Benchmark Example", ""),
+              "Benchmark Audio": data.get("Benchmark Audio", ""),
               "Abstract": data.get("Abstract", ""),
               "Comments?": data.get("Comments", "") or data.get("Comments?", ""),
           }

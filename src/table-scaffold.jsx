@@ -8,9 +8,11 @@ import {
   flexRender,
 } from "@tanstack/react-table";
 import {
+  audioMimeType,
   defaultColumnVisibility,
   displayHeaders,
   isWhoIsBetterColumn,
+  parseAudioCell,
   parseKeywords,
   parseReleaseDates,
   parseTableCsv,
@@ -22,6 +24,7 @@ import {
 const PREVIEW_COUNT = 3;
 
 const CATEGORY_STYLES = {
+  Modality: { background: "#ccfbf1", color: "#0f766e", border: "#99f6e4" },
   Attribute: { background: "#ede9fe", color: "#5b21b6", border: "#ddd6fe" },
   Domain: { background: "#e0f2fe", color: "#075985", border: "#bae6fd" },
   Format: { background: "#dcfce7", color: "#166534", border: "#bbf7d0" },
@@ -35,13 +38,16 @@ const CATEGORY_ROW_COLORS = {
   "Expert Knowledge": "#bfdbfe",
   Linguistics: "#fed7aa",
   "General NLP tasks": "#a7f3d0",
+  Reasoning: "#ddd6fe",
   "Tasks with reasoning": "#ddd6fe",
   "Cross-lingual tasks": "#fbcfe8",
 };
 
 const NARROW_COLUMNS = new Set([
+  "ID",
   "Language(s) tested",
   "Model(s) tested",
+  "Links",
 ]);
 
 const WHO_IS_BETTER_LEAF_COLUMNS = new Set([
@@ -53,6 +59,152 @@ const WHO_IS_BETTER_LEAF_COLUMNS = new Set([
 const MEDIUM_NARROW_COLUMNS = new Set(["Keywords"]);
 
 const REDUCED_COLUMNS = new Set(["Paper title", "Summary"]);
+
+function linkHostname(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+function HuggingFaceLogo({ className }) {
+  return (
+    <img
+      src={`${import.meta.env.BASE_URL}icons/huggingface-icon.svg`}
+      alt=""
+      className={className}
+      aria-hidden="true"
+    />
+  );
+}
+
+function AclLogo({ className }) {
+  return (
+    <img
+      src={`${import.meta.env.BASE_URL}icons/acl-logo.svg`}
+      alt=""
+      className={className}
+      aria-hidden="true"
+    />
+  );
+}
+
+function ArxivLogo({ className }) {
+  return (
+    <img
+      src={`${import.meta.env.BASE_URL}icons/arxiv-logomark-small.svg`}
+      alt=""
+      className={className}
+      aria-hidden="true"
+    />
+  );
+}
+
+function GitHubLogo({ className }) {
+  return (
+    <svg viewBox="0 0 16 16" className={className} aria-hidden="true" fill="currentColor">
+      <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8" />
+    </svg>
+  );
+}
+
+function ExternalLinkIcon({ href }) {
+  const host = linkHostname(href);
+  const iconClass = "inline-block h-[1.1em] w-[1.1em] align-[-0.15em] text-slate-800";
+  if (host === "aclanthology.org" || host.endsWith(".aclanthology.org")) {
+    return (
+      <AclLogo className="inline-block h-[1.05em] w-auto align-[-0.12em]" />
+    );
+  }
+  if (host === "arxiv.org" || host.endsWith(".arxiv.org")) {
+    return (
+      <ArxivLogo className="inline-block h-[1.05em] w-auto align-[-0.12em]" />
+    );
+  }
+  if (host === "huggingface.co" || host.endsWith(".huggingface.co")) {
+    return <HuggingFaceLogo className={iconClass} />;
+  }
+  if (
+    host === "github.com" ||
+    host === "gist.github.com" ||
+    host.endsWith(".github.io") ||
+    host === "raw.githubusercontent.com"
+  ) {
+    return <GitHubLogo className={iconClass} />;
+  }
+  return "🔗";
+}
+
+function splitUrls(value) {
+  if (!value?.trim()) return [];
+  return value
+    .split(/[\s,;|]+/)
+    .map((part) => part.trim())
+    .filter((part) => /^https?:\/\//i.test(part));
+}
+
+function rowLinkEntries(row) {
+  const paper = (row["Paper Link"] || row.Link || "").trim();
+  const dataset = (row["Dataset Link"] || "").trim();
+  const other = splitUrls(row["Other Links"]);
+
+  const entries = [];
+  if (paper) {
+    entries.push({
+      key: "paper",
+      label: "Paper",
+      href: /^https?:\/\//i.test(paper) ? paper : null,
+      text: paper,
+    });
+  }
+  if (dataset) {
+    entries.push({
+      key: "dataset",
+      label: "Dataset",
+      href: /^https?:\/\//i.test(dataset) ? dataset : null,
+      text: dataset,
+    });
+  }
+  other.forEach((href, index) => {
+    entries.push({
+      key: `other-${index}`,
+      label: "Other",
+      href,
+      text: href,
+    });
+  });
+  return entries;
+}
+
+function LinksCell({ row }) {
+  const entries = rowLinkEntries(row);
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {entries.map((entry) =>
+        entry.href ? (
+          <a
+            key={entry.key}
+            href={entry.href}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-block text-base leading-none no-underline sm:text-lg"
+            title={`${entry.label}: ${entry.href}`}
+            aria-label={`${entry.label}: ${entry.href}`}
+          >
+            <ExternalLinkIcon href={entry.href} />
+          </a>
+        ) : (
+          <span key={entry.key} title={`${entry.label}: ${entry.text}`} className="text-xs text-slate-600">
+            {entry.text}
+          </span>
+        )
+      )}
+    </div>
+  );
+}
 
 function columnWidthClass(columnId) {
   if (WHO_IS_BETTER_LEAF_COLUMNS.has(columnId) || columnId.startsWith("Open-source")) {
@@ -472,20 +624,6 @@ function leafColumn(header, { releaseDates, keywordCategories }) {
     header: displayHeader,
     cell: ({ getValue, row }) => {
       const value = getValue();
-      if (header === "Link") {
-        return value ? (
-          <a
-            href={value}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-block text-base leading-none no-underline sm:text-lg"
-            title={value}
-            aria-label={value}
-          >
-            🔗
-          </a>
-        ) : null;
-      }
       if (header === "Model(s) tested") {
         return (
           <ModelsCell
@@ -509,22 +647,46 @@ function leafColumn(header, { releaseDates, keywordCategories }) {
   };
 }
 
+function linksColumn() {
+  return {
+    id: "Links",
+    header: "Links",
+    enableSorting: false,
+    accessorFn: (row) =>
+      rowLinkEntries(row)
+        .map((entry) => entry.text)
+        .join(" "),
+    cell: ({ row }) => <LinksCell row={row.original} />,
+  };
+}
+
 function buildColumns(headers, ctx) {
   const whoIsBetterHeaders = headers.filter(isWhoIsBetterColumn);
-  const withoutLink = headers.filter((header) => header !== "Link");
-  const paperIndex = withoutLink.indexOf("Paper title");
+  const withoutLinks = headers.filter(
+    (header) =>
+      header !== "Link" &&
+      header !== "Paper Link" &&
+      header !== "Dataset Link" &&
+      header !== "Other Links" &&
+      header !== "Links"
+  );
+  const paperIndex = withoutLinks.indexOf("Paper title");
   const ordered =
     paperIndex === -1
-      ? headers
+      ? [...withoutLinks, "Links"]
       : [
-          ...withoutLink.slice(0, paperIndex + 1),
-          "Link",
-          ...withoutLink.slice(paperIndex + 1),
+          ...withoutLinks.slice(0, paperIndex + 1),
+          "Links",
+          ...withoutLinks.slice(paperIndex + 1),
         ];
   const columns = [];
   let grouped = false;
 
   for (const header of ordered) {
+    if (header === "Links") {
+      columns.push(linksColumn());
+      continue;
+    }
     if (isWhoIsBetterColumn(header)) {
       if (!grouped) {
         columns.push({
@@ -543,10 +705,46 @@ function buildColumns(headers, ctx) {
 }
 
 function expandedFields(row) {
-  return [
-    ["Benchmark Example", row["Benchmark Example"]],
-    ["Abstract", row.Abstract],
-  ].filter(([, value]) => value?.trim());
+  const fromExample = parseAudioCell(row["Benchmark Example"]);
+  const fromAudio = parseAudioCell(row["Benchmark Audio"]);
+
+  const files = [];
+  const seen = new Set();
+  for (const file of [...fromExample.files, ...fromAudio.files]) {
+    const key = file.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    files.push(file);
+  }
+
+  const textParts = [fromExample.text, fromAudio.text].filter(Boolean);
+  const text = textParts.join("\n\n");
+
+  const fields = [];
+  if (text || files.length > 0) {
+    fields.push(["Benchmark Example", text, files]);
+  }
+  if (row.Abstract?.trim()) {
+    fields.push(["Abstract", row.Abstract, []]);
+  }
+  return fields;
+}
+
+function ExampleAudioPlayers({ files }) {
+  if (!files.length) return null;
+  const asset = (path) => `${import.meta.env.BASE_URL}${path}`;
+  return (
+    <div className="mt-2 space-y-2">
+      {files.map((file) => (
+        <div key={file} className="max-w-md">
+          <audio controls preload="none" className="w-full">
+            <source src={asset(`audio/${file}`)} type={audioMimeType(file)} />
+          </audio>
+          <div className="mt-0.5 text-xs text-slate-500">{file}</div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function Table() {
@@ -630,6 +828,24 @@ export default function Table() {
     }
     return uniqueSorted(values);
   }, [data]);
+
+  const usedKeywordList = useMemo(() => {
+    const used = new Set();
+    for (const row of data) {
+      for (const keyword of splitKeywords(row.Keywords)) {
+        used.add(keyword.toLowerCase());
+      }
+    }
+    return keywordList.filter(({ keyword }) => used.has(keyword.toLowerCase()));
+  }, [data, keywordList]);
+
+  useEffect(() => {
+    const used = new Set(usedKeywordList.map(({ keyword }) => keyword));
+    setSelectedKeywords((prev) => {
+      const next = new Set([...prev].filter((keyword) => used.has(keyword)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [usedKeywordList]);
 
   const filteredData = useMemo(() => {
     return data.filter((row) => {
@@ -765,7 +981,7 @@ export default function Table() {
       />
 
       <KeywordFilterBar
-        keywords={keywordList}
+        keywords={usedKeywordList}
         selected={selectedKeywords}
         onToggle={toggleKeyword}
         onClear={() => setSelectedKeywords(new Set())}
@@ -890,7 +1106,7 @@ export default function Table() {
                         key={cell.id}
                         className={`py-2.5 px-3 align-top whitespace-pre-wrap text-gray-700 bg-transparent ${columnWidthClass(cell.column.id)}`}
                         onClick={
-                          cell.column.id === "Link"
+                          cell.column.id === "Links"
                             ? (e) => e.stopPropagation()
                             : undefined
                         }
@@ -909,12 +1125,17 @@ export default function Table() {
                           className="sticky left-0 box-border px-4 py-3 space-y-3 text-gray-600"
                           style={{ width: panelWidth || "100%" }}
                         >
-                          {expandedFields(row.original).map(([label, value]) => (
+                          {expandedFields(row.original).map(([label, value, audioFiles = []]) => (
                             <div key={label}>
                               <div className="font-medium text-gray-700 mb-1">{label}</div>
-                              <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                                {value}
-                              </div>
+                              {value?.trim() ? (
+                                <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                                  {value}
+                                </div>
+                              ) : null}
+                              {label === "Benchmark Example" ? (
+                                <ExampleAudioPlayers files={audioFiles} />
+                              ) : null}
                             </div>
                           ))}
                         </div>
