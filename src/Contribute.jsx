@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { CONTRIBUTION_LABEL, GITHUB_REPO } from "./config.js";
-import { parseKeywords, splitKeywords } from "./parseCsv.js";
+import {
+  groupKeywordsByCategory,
+  parseKeywords,
+  sortKeywords,
+  splitKeywords,
+} from "./parseCsv.js";
 
 const CATEGORIES = [
   "Expert Knowledge",
@@ -110,10 +115,11 @@ export default function Contribute() {
   const [error, setError] = useState("");
   const [pasteHint, setPasteHint] = useState(false);
   const [keywordList, setKeywordList] = useState([]);
+  const [keywordCategories, setKeywordCategories] = useState(() => new Map());
 
   const selectedKeywords = useMemo(
-    () => splitKeywords(form.Keywords),
-    [form.Keywords]
+    () => sortKeywords(splitKeywords(form.Keywords), keywordCategories),
+    [form.Keywords, keywordCategories]
   );
 
   useEffect(() => {
@@ -124,10 +130,14 @@ export default function Contribute() {
         return response.text();
       })
       .then((text) => {
-        const { list } = parseKeywords(text);
+        const { list, byKeyword } = parseKeywords(text);
         setKeywordList(list);
+        setKeywordCategories(byKeyword);
       })
-      .catch(() => setKeywordList([]));
+      .catch(() => {
+        setKeywordList([]);
+        setKeywordCategories(new Map());
+      });
   }, []);
 
   const update = (key) => (event) => {
@@ -140,7 +150,10 @@ export default function Contribute() {
       const next = hasKeyword(current, keyword)
         ? current.filter((item) => item.toLowerCase() !== keyword.toLowerCase())
         : [...current, keyword];
-      return { ...prev, Keywords: formatKeywordList(next) };
+      return {
+        ...prev,
+        Keywords: formatKeywordList(sortKeywords(next, keywordCategories)),
+      };
     });
   };
 
@@ -297,29 +310,38 @@ export default function Contribute() {
                 <span className={LABEL_CLASS}>Keywords</span>
                 <span className="text-xs text-slate-500">Click chips to add or remove</span>
               </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {keywordList.map(({ keyword, category }) => {
+              <div className="mt-2 grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+                {groupKeywordsByCategory(keywordList).map(({ category, keywords }) => {
                   const style = KEYWORD_STYLES[category] ?? FALLBACK_STYLE;
-                  const isSelected = hasKeyword(selectedKeywords, keyword);
                   return (
-                    <button
-                      key={keyword}
-                      type="button"
-                      title={category}
-                      onClick={() => toggleKeyword(keyword)}
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border transition ${
-                        isSelected
-                          ? "ring-2 ring-offset-1 ring-slate-400 scale-105"
-                          : "opacity-90 hover:opacity-100"
-                      }`}
-                      style={{
-                        backgroundColor: style.background,
-                        color: style.color,
-                        borderColor: style.border,
-                      }}
-                    >
-                      {keyword}
-                    </button>
+                    <div key={category}>
+                      <div className="mb-1 text-xs font-medium text-slate-600">{category}</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {keywords.map(({ keyword }) => {
+                          const isSelected = hasKeyword(selectedKeywords, keyword);
+                          return (
+                            <button
+                              key={keyword}
+                              type="button"
+                              title={`${category}: ${keyword}`}
+                              onClick={() => toggleKeyword(keyword)}
+                              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border transition ${
+                                isSelected
+                                  ? "ring-2 ring-offset-1 ring-slate-400 scale-105"
+                                  : "opacity-90 hover:opacity-100"
+                              }`}
+                              style={{
+                                backgroundColor: style.background,
+                                color: style.color,
+                                borderColor: style.border,
+                              }}
+                            >
+                              {keyword}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   );
                 })}
               </div>

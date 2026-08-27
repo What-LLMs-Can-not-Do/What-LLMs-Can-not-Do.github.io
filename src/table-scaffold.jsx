@@ -13,10 +13,12 @@ import {
   displayHeaders,
   isWhoIsBetterColumn,
   parseAudioCell,
+  groupKeywordsByCategory,
   parseKeywords,
   parseReleaseDates,
   parseTableCsv,
   sortModelsByReleaseDate,
+  sortKeywords,
   splitKeywords,
   splitModels,
 } from "./parseCsv.js";
@@ -285,7 +287,7 @@ function LanguagesCell({ value, expanded }) {
 }
 
 function KeywordsCell({ value, keywordCategories }) {
-  const keywords = splitKeywords(value);
+  const keywords = sortKeywords(splitKeywords(value), keywordCategories);
   if (keywords.length === 0) return null;
 
   return (
@@ -316,6 +318,8 @@ function KeywordsCell({ value, keywordCategories }) {
 function KeywordFilterBar({ keywords, selected, onToggle, onClear }) {
   if (keywords.length === 0) return null;
 
+  const groups = groupKeywordsByCategory(keywords);
+
   return (
     <div className="mb-4">
       <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -330,27 +334,38 @@ function KeywordFilterBar({ keywords, selected, onToggle, onClear }) {
           </button>
         )}
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        {keywords.map(({ keyword, category }) => {
+      <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+        {groups.map(({ category, keywords: items }) => {
           const style = CATEGORY_STYLES[category] ?? FALLBACK_STYLE;
-          const isSelected = selected.has(keyword);
           return (
-            <button
-              key={keyword}
-              type="button"
-              title={category}
-              onClick={() => onToggle(keyword)}
-              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border transition ${
-                isSelected ? "ring-2 ring-offset-1 ring-slate-400 scale-105" : "opacity-90 hover:opacity-100"
-              }`}
-              style={{
-                backgroundColor: style.background,
-                color: style.color,
-                borderColor: style.border,
-              }}
-            >
-              {keyword}
-            </button>
+            <div key={category}>
+              <div className="mb-1 text-xs font-medium text-gray-600">{category}</div>
+              <div className="flex flex-wrap gap-1.5">
+                {items.map(({ keyword }) => {
+                  const isSelected = selected.has(keyword);
+                  return (
+                    <button
+                      key={keyword}
+                      type="button"
+                      title={`${category}: ${keyword}`}
+                      onClick={() => onToggle(keyword)}
+                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border transition ${
+                        isSelected
+                          ? "ring-2 ring-offset-1 ring-slate-400 scale-105"
+                          : "opacity-90 hover:opacity-100"
+                      }`}
+                      style={{
+                        backgroundColor: style.background,
+                        color: style.color,
+                        borderColor: style.border,
+                      }}
+                    >
+                      {keyword}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           );
         })}
       </div>

@@ -151,6 +151,21 @@ export function parseReleaseDates(text) {
   return dates;
 }
 
+/** Display / sort order for keyword categories (3-col grid: Domain starts row 2). */
+export const KEYWORD_CATEGORY_ORDER = [
+  "Modality",
+  "Attribute",
+  "Format",
+  "Domain",
+  "Language",
+  "Task",
+];
+
+function keywordCategoryRank(category) {
+  const index = KEYWORD_CATEGORY_ORDER.indexOf(category);
+  return index === -1 ? KEYWORD_CATEGORY_ORDER.length : index;
+}
+
 export function parseKeywords(text) {
   const rows = parseCsv(text);
   const byKeyword = new Map();
@@ -168,13 +183,31 @@ export function parseKeywords(text) {
     list.push({ keyword, category });
   }
 
-  list.sort((a, b) =>
-    a.category === b.category
-      ? a.keyword.localeCompare(b.keyword)
-      : a.category.localeCompare(b.category)
+  list.sort((a, b) => {
+    if (a.category === b.category) return a.keyword.localeCompare(b.keyword);
+    const byRank = keywordCategoryRank(a.category) - keywordCategoryRank(b.category);
+    return byRank || a.category.localeCompare(b.category);
+  });
+
+  const orderedCategories = [...categories].sort(
+    (a, b) => keywordCategoryRank(a) - keywordCategoryRank(b) || a.localeCompare(b)
   );
 
-  return { byKeyword, categories: [...categories].sort(), list };
+  return { byKeyword, categories: orderedCategories, list };
+}
+
+/** Group a keyword list into `{ category, keywords }[]`, preserving list order. */
+export function groupKeywordsByCategory(list) {
+  const groups = [];
+  let current = null;
+  for (const item of list) {
+    if (!current || current.category !== item.category) {
+      current = { category: item.category, keywords: [] };
+      groups.push(current);
+    }
+    current.keywords.push(item);
+  }
+  return groups;
 }
 
 export function splitModels(value) {
@@ -191,6 +224,18 @@ export function splitKeywords(value) {
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean);
+}
+
+/** Sort keywords by KEYWORD_CATEGORY_ORDER, then alphabetically within category. */
+export function sortKeywords(keywords, byKeyword) {
+  return [...keywords].sort((a, b) => {
+    const catA = byKeyword?.get(a) ?? byKeyword?.get(a.toLowerCase()) ?? "";
+    const catB = byKeyword?.get(b) ?? byKeyword?.get(b.toLowerCase()) ?? "";
+    const byRank = keywordCategoryRank(catA) - keywordCategoryRank(catB);
+    if (byRank) return byRank;
+    if (catA !== catB) return catA.localeCompare(catB);
+    return a.localeCompare(b);
+  });
 }
 
 export function sortModelsByReleaseDate(models, releaseDates) {
