@@ -4,14 +4,15 @@ const logoSrc = `${import.meta.env.BASE_URL}logo_cropped.png`;
 
 const ORGANIZERS = [
   { name: "Lukas Edman", affiliation: "TU Munich" },
-  { name: "Kathy Hämmerl", affiliation: "TU Munich" },
   { name: "Hanna Shcharbakova", affiliation: "TU Munich" },
-  { name: "Lisa Bylinina", affiliation: "Utrecht University" },
-  { name: "Vilém Zouhar", affiliation: "ETH Zurich" },
   { name: "JiWoo Hwang", affiliation: "TU Munich" },
   { name: "Sophie Henning", affiliation: "TU Munich" },
-  { name: "Maike Züfle", affiliation: "KIT Karlsruhe" },
   { name: "Marianne de Heer Kloots", affiliation: "University of Amsterdam" },
+  { name: "Maike Züfle", affiliation: "KIT Karlsruhe" },
+  { name: "Kathy Hämmerl", affiliation: "TU Munich" },
+  { name: "Vilém Zouhar", affiliation: "ETH Zurich" },
+  { name: "Lisa Bylinina", affiliation: "Utrecht University" },
+  { name: "Leonie Weissweiler", affiliation: "Leipzig University" },
   { name: "Alexander Fraser", affiliation: "TU Munich" },
 ];
 
