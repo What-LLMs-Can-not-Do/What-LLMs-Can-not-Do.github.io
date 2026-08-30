@@ -17,6 +17,7 @@ jobs:
   create-pr:
     if: >
       contains(github.event.issue.title, '[Table contribution]') ||
+      contains(github.event.issue.title, '[Table change]') ||
       contains(join(github.event.issue.labels.*.name, ','), 'table-contribution')
     runs-on: ubuntu-latest
     steps:
@@ -47,111 +48,111 @@ jobs:
             --force || true
           gh issue edit "${{ github.event.issue.number }}" --add-label "table-contribution"
 
-      - name: Build CSV row and open PR
+      - name: Parse contribution JSON
+        if: steps.guard.outputs.skip != 'true'
+        id: parse
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          python3 <<'PY'
+          import json, os, pathlib, sys
+
+          sys.path.insert(0, ".github/scripts")
+          from contribution import parse_contribution_json
+
+          body = os.environ["ISSUE_BODY"]
+          data = parse_contribution_json(body)
+          contribution_type = data.get("contribution_type", "addition")
+          pathlib.Path("/tmp/contribution.json").write_text(json.dumps(data), encoding="utf-8")
+          pathlib.Path("/tmp/contribution_type.txt").write_text(contribution_type, encoding="utf-8")
+          paper = (data.get("Paper title") or "submission").strip() or "submission"
+          pathlib.Path("/tmp/paper_title.txt").write_text(paper, encoding="utf-8")
+          row_id = str(data.get("ID", "")).strip()
+          pathlib.Path("/tmp/row_id.txt").write_text(row_id, encoding="utf-8")
+          PY
+
+      - name: Download issue audio attachments
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 <<'PY'
+          import json, os, pathlib, sys
+
+          sys.path.insert(0, ".github/scripts")
+          from contribution import download_issue_attachments
+
+          body = os.environ["ISSUE_BODY"]
+          token = os.environ["GITHUB_TOKEN"]
+          files = download_issue_attachments(body, token)
+          pathlib.Path("/tmp/audio_files.json").write_text(json.dumps(files), encoding="utf-8")
+          print(f"Found {len(files)} attachment(s)")
+          PY
+
+      - name: Write audio files
+        if: steps.guard.outputs.skip != 'true'
+        run: |
+          AUDIO_FILES_JSON="$(cat /tmp/audio_files.json)"
+          if [ "$AUDIO_FILES_JSON" = "[]" ]; then
+            echo "No audio attachments found in issue body"
+            exit 0
+          fi
+          export AUDIO_DIR=public/audio
+          export AUDIO_FILES_JSON
+          if [ "$(cat /tmp/contribution_type.txt)" = "change" ]; then
+            export AUDIO_OVERWRITE=true
+          fi
+          python3 .github/scripts/contribution.py write-audio
+
+      - name: Update or append CSV row
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          CSV_PATH: public/data.csv
+        run: |
+          export CSV_PATH
+          export CONTRIBUTION_JSON="$(cat /tmp/contribution.json)"
+          if [ "$(cat /tmp/contribution_type.txt)" = "change" ]; then
+            python3 .github/scripts/contribution.py update-row
+          else
+            python3 .github/scripts/contribution.py append-row
+          fi
+
+      - name: Open pull request
         if: steps.guard.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
-          ISSUE_BODY: ${{ github.event.issue.body }}
           ISSUE_URL: ${{ github.event.issue.html_url }}
         run: |
-          python3 <<'PY'
-          import csv, io, json, os, pathlib, re, textwrap
-
-          body = os.environ["ISSUE_BODY"]
-          issue_number = os.environ["ISSUE_NUMBER"]
-          issue_url = os.environ["ISSUE_URL"]
-
-          match = re.search(r"```json\s*(\{.*?\})\s*```", body, flags=re.S)
-          if not match:
-              raise SystemExit("Could not find contribution JSON in the issue body")
-
-          data = json.loads(match.group(1))
-          csv_path = pathlib.Path("public/data.csv")
-          text = csv_path.read_text(encoding="utf-8")
-          lines = text.splitlines()
-          header_idx = next(
-              i
-              for i, line in enumerate(lines)
-              if line.startswith("ID,General category,") or line.startswith("General category,")
-          )
-          header = next(csv.reader([lines[header_idx]]))
-
-          max_id = 0
-          if "ID" in header:
-              reader = csv.DictReader(io.StringIO("\n".join(lines[header_idx:])))
-              for existing in reader:
-                  raw = (existing.get("ID") or "").strip()
-                  if not raw:
-                      continue
-                  try:
-                      max_id = max(max_id, int(raw))
-                  except ValueError:
-                      pass
-
-          field_map = {
-              "ID": str(max_id + 1) if "ID" in header else "",
-              "General category": data.get("General category", ""),
-              "Subtopic/Keywords": data.get("Subtopic/Keywords", ""),
-              "Keywords": data.get("Keywords", ""),
-              "Paper title": data.get("Paper title", ""),
-              "License": data.get("License", ""),
-              "Language(s) tested": data.get("Language(s) tested", ""),
-              "Model(s) tested": data.get("Model(s) tested", ""),
-              "Year of publication": data.get("Year of publication", ""),
-              "Paper Link": data.get("Paper Link", "") or data.get("Link", ""),
-              "Dataset Link": data.get("Dataset Link", ""),
-              "Other Links": data.get("Other Links", ""),
-              "Link": data.get("Paper Link", "") or data.get("Link", ""),
-              "Summary": data.get("Summary", ""),
-              "Human benchmark?": data.get("Human benchmark?", ""),
-              "Closed": data.get("Closed", ""),
-              "Open-weight": data.get("Open-weight", ""),
-              "Open-source (including open training data)": data.get("Open-source", "")
-                  or data.get("Open-source (including open training data)", ""),
-              "Benchmark Example": data.get("Benchmark Example", ""),
-              "Benchmark Audio": data.get("Benchmark Audio", ""),
-              "Abstract": data.get("Abstract", ""),
-              "Comments?": data.get("Comments", "") or data.get("Comments?", ""),
-          }
-
-          row = [field_map.get(col, "") for col in header]
-          buf = []
-          writer = csv.writer(buf, lineterminator="\n")
-          writer.writerow(row)
-          new_row = buf[0]
-
-          if text and not text.endswith("\n"):
-              text += "\n"
-          csv_path.write_text(text + new_row + "\n", encoding="utf-8")
-
-          paper = (data.get("Paper title") or "submission").strip() or "submission"
-          branch = f"contribution/issue-{issue_number}"
-          pr_title = f"Add table entry: {paper}"
-          pr_body = textwrap.dedent(f"""\
-          ## Table contribution
-
-          Automated PR from {issue_url}.
-
-          Please review the new `public/data.csv` row before merging.
-          """)
-
-          pathlib.Path("/tmp/pr_title.txt").write_text(pr_title, encoding="utf-8")
-          pathlib.Path("/tmp/pr_body.md").write_text(pr_body, encoding="utf-8")
-          pathlib.Path("/tmp/branch.txt").write_text(branch, encoding="utf-8")
-          print(f"Prepared row for {paper!r} on branch {branch}")
-          PY
-
-          BRANCH=$(cat /tmp/branch.txt)
+          BRANCH="contribution/issue-${ISSUE_NUMBER}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
           git add public/data.csv
-          git commit -m "Add table contribution from #${ISSUE_NUMBER}"
+          if [ -d public/audio ] && [ "$(find public/audio -type f ! -name '.gitkeep' | wc -l)" -gt 0 ]; then
+            git add public/audio
+          fi
+          if [ "$(cat /tmp/contribution_type.txt)" = "change" ]; then
+            git commit -m "Update table entry #$(cat /tmp/row_id.txt) from #${ISSUE_NUMBER}"
+          else
+            git commit -m "Add table contribution from #${ISSUE_NUMBER}"
+          fi
           git push -u origin "$BRANCH"
+          if [ "$(cat /tmp/contribution_type.txt)" = "change" ] && [ -s /tmp/row_id.txt ]; then
+            PR_TITLE="Update table entry #$(cat /tmp/row_id.txt): $(cat /tmp/paper_title.txt)"
+            PR_BODY="Automated PR from ${ISSUE_URL}.
+
+          Please review the updated \`public/data.csv\` row and any audio files before merging."
+          else
+            PR_TITLE="Add table entry: $(cat /tmp/paper_title.txt)"
+            PR_BODY="Automated PR from ${ISSUE_URL}.
+
+          Please review the new \`public/data.csv\` row and any audio files before merging."
+          fi
           PR_URL=$(gh pr create \
-            --title "$(cat /tmp/pr_title.txt)" \
-            --body-file /tmp/pr_body.md \
+            --title "$PR_TITLE" \
+            --body "$PR_BODY" \
             --base main \
             --head "$BRANCH")
           gh issue comment "$ISSUE_NUMBER" --body "Opened pull request for review: $PR_URL"

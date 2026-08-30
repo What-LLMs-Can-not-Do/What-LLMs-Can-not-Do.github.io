@@ -135,6 +135,38 @@ export function parseTableCsv(text) {
   return parseCsv(text.slice(start)).filter((row) => row["Paper title"]?.trim());
 }
 
+export function findTableRowById(rows, id) {
+  const needle = String(id ?? "").trim();
+  if (!needle) return null;
+  return rows.find((row) => String(row.ID ?? "").trim() === needle) ?? null;
+}
+
+/** Map a table CSV row to contribute-form field names. */
+export function tableRowToContributionForm(row) {
+  if (!row) return null;
+  return {
+    "General category": row["General category"] ?? "",
+    Keywords: row.Keywords ?? "",
+    "Paper title": row["Paper title"] ?? "",
+    License: row.License ?? "",
+    "Language(s) tested": row["Language(s) tested"] ?? "",
+    "Model(s) tested": row["Model(s) tested"] ?? "",
+    "Year of publication": row["Year of publication"] ?? "",
+    "Paper Link": row["Paper Link"] ?? row.Link ?? "",
+    "Dataset Link": row["Dataset Link"] ?? "",
+    "Other Links": row["Other Links"] ?? "",
+    Summary: row.Summary ?? "",
+    "Human benchmark?": row["Human benchmark?"] ?? "",
+    Closed: row.Closed ?? "",
+    "Open-weight": row["Open-weight"] ?? "",
+    "Open-source":
+      row["Open-source (including open training data)"] ?? row["Open-source"] ?? "",
+    "Benchmark Example": row["Benchmark Example"] ?? "",
+    Abstract: row.Abstract ?? "",
+    Comments: row["Comments?"] ?? row.Comments ?? "",
+  };
+}
+
 /** @deprecated Use parseTableCsv */
 export const parseData2Csv = parseTableCsv;
 
