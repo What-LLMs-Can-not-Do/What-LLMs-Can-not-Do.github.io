@@ -712,7 +712,7 @@ export default function Contribute() {
             </div>
             <Field
               label="Benchmark example"
-              hint="Benchmark text. To include audio in the middle of the text, write the filename inline (e.g. Listen to sample.mp3 and answer …). Only .mp3/.wav are supported. Upload audio files on the GitHub issue page before submitting the issue."
+              hint="Benchmark text. Reference .mp3/.wav filenames to show audio players above the text by default. Write a filename inline in a sentence to embed the player there (e.g. Listen to sample.mp3 and answer …), or add [audio below] to place players after the text. Upload audio files on the GitHub issue page before submitting the issue."
             >
               <textarea
                 rows={4}

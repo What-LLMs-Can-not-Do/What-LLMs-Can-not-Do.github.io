@@ -744,7 +744,17 @@ function expandedFields(row) {
 
   const fields = [];
   if (text || files.length > 0) {
-    fields.push(["Benchmark Example", text, files]);
+    fields.push([
+      "Benchmark Example",
+      text,
+      {
+        files,
+        placement: fromExample.placement === "below" || fromAudio.placement === "below"
+          ? "below"
+          : fromExample.placement,
+        segments: fromExample.segments,
+      },
+    ]);
   }
   if (row.Abstract?.trim()) {
     fields.push(["Abstract", row.Abstract, []]);
@@ -752,20 +762,65 @@ function expandedFields(row) {
   return fields;
 }
 
-function ExampleAudioPlayers({ files }) {
+function ExampleAudioPlayers({ files, placement = "above", inline = false }) {
   if (!files.length) return null;
   const asset = (path) => `${import.meta.env.BASE_URL}${path}`;
+  const spacing =
+    placement === "below" ? "mt-2" : inline ? "my-1" : "mb-2";
   return (
-    <div className="mt-2 space-y-2">
+    <div className={`${spacing} space-y-2 ${inline ? "inline-block align-middle max-w-xs" : ""}`}>
       {files.map((file) => (
-        <div key={file} className="max-w-md">
+        <div key={file} className={inline ? "" : "max-w-md"}>
           <audio controls preload="none" className="w-full">
             <source src={asset(`audio/${file}`)} type={audioMimeType(file)} />
           </audio>
-          <div className="mt-0.5 text-xs text-slate-500">{file}</div>
         </div>
       ))}
     </div>
+  );
+}
+
+function BenchmarkExampleContent({ text, audio = {} }) {
+  const { files = [], placement = "above", segments = null } = audio;
+  const textClass = "whitespace-pre-wrap break-words [overflow-wrap:anywhere]";
+
+  if (placement === "inline" && segments?.length) {
+    return (
+      <div className={textClass}>
+        {segments.map((segment, index) =>
+          segment.type === "text" ? (
+            <span key={index}>{segment.content}</span>
+          ) : (
+            <ExampleAudioPlayers
+              key={index}
+              files={[segment.file]}
+              inline
+            />
+          ),
+        )}
+      </div>
+    );
+  }
+
+  const players = files.length ? (
+    <ExampleAudioPlayers files={files} placement={placement} />
+  ) : null;
+  const body = text?.trim() ? <div className={textClass}>{text}</div> : null;
+
+  if (placement === "below") {
+    return (
+      <>
+        {body}
+        {players}
+      </>
+    );
+  }
+
+  return (
+    <>
+      {players}
+      {body}
+    </>
   );
 }
 
@@ -1147,16 +1202,15 @@ export default function Table() {
                           className="sticky left-0 box-border px-4 py-3 space-y-3 text-gray-600"
                           style={{ width: panelWidth || "100%" }}
                         >
-                          {expandedFields(row.original).map(([label, value, audioFiles = []]) => (
+                          {expandedFields(row.original).map(([label, value, audio = {}]) => (
                             <div key={label}>
                               <div className="font-medium text-gray-700 mb-1">{label}</div>
-                              {value?.trim() ? (
+                              {label === "Benchmark Example" ? (
+                                <BenchmarkExampleContent text={value} audio={audio} />
+                              ) : value?.trim() ? (
                                 <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
                                   {value}
                                 </div>
-                              ) : null}
-                              {label === "Benchmark Example" ? (
-                                <ExampleAudioPlayers files={audioFiles} />
                               ) : null}
                             </div>
                           ))}

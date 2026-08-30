@@ -64,36 +64,94 @@ const HIDDEN_COLUMNS = new Set([
 
 const AUDIO_TOKEN_RE = /\b([A-Za-z0-9][A-Za-z0-9._/-]*\.(?:mp3|wav))\b/gi;
 const AUDIO_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]*\.(mp3|wav)$/i;
+const AUDIO_BELOW_RE = /\[audio\s+below\]/gi;
 
 function isSafeAudioName(name) {
   return AUDIO_NAME_RE.test(name) && !name.includes("..");
 }
 
-/**
- * Pull .mp3/.wav filenames out of a cell that may also contain accompanying text.
- * Filenames may be comma-separated or embedded in prose.
- */
-export function parseAudioCell(value) {
-  if (!value?.trim()) return { files: [], text: "" };
-
-  const files = [];
-  const seen = new Set();
-  const text = value
-    .replace(AUDIO_TOKEN_RE, (match) => {
-      const name = match.replace(/^\/+/, "");
-      if (isSafeAudioName(name) && !seen.has(name.toLowerCase())) {
-        seen.add(name.toLowerCase());
-        files.push(name);
-      }
-      return " ";
-    })
+function cleanupExampleText(text) {
+  return text
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/^[\s,;|/\-–—]+|[\s,;|/\-–—]+$/g, "")
     .trim();
+}
 
-  return { files, text };
+function lineHasInlineAudio(line) {
+  AUDIO_TOKEN_RE.lastIndex = 0;
+  if (!AUDIO_TOKEN_RE.test(line)) return false;
+  AUDIO_TOKEN_RE.lastIndex = 0;
+  return line.replace(AUDIO_TOKEN_RE, "").trim().length > 0;
+}
+
+/**
+ * Pull .mp3/.wav filenames out of a cell that may also contain accompanying text.
+ * Filenames may be comma-separated or embedded in prose.
+ * Audio players render above the text by default; use [audio below] to place them
+ * after the text, or write a filename inline in a sentence to embed the player there.
+ */
+export function parseAudioCell(value) {
+  if (!value?.trim()) {
+    return { files: [], text: "", placement: "above", segments: null };
+  }
+
+  let raw = value;
+  let placement = "above";
+  if (AUDIO_BELOW_RE.test(raw)) {
+    placement = "below";
+    raw = raw.replace(AUDIO_BELOW_RE, "");
+  }
+
+  AUDIO_TOKEN_RE.lastIndex = 0;
+  const files = [];
+  const seen = new Set();
+  const matches = [];
+
+  for (const match of raw.matchAll(AUDIO_TOKEN_RE)) {
+    const name = match[1].replace(/^\/+/, "");
+    if (isSafeAudioName(name) && !seen.has(name.toLowerCase())) {
+      seen.add(name.toLowerCase());
+      files.push(name);
+      matches.push({ index: match.index, length: match[0].length, name });
+    }
+  }
+
+  if (!files.length) {
+    return { files: [], text: cleanupExampleText(raw), placement, segments: null };
+  }
+
+  const hasInline =
+    placement !== "below" &&
+    matches.some((match) => {
+      const lineStart = raw.lastIndexOf("\n", match.index - 1) + 1;
+      const lineEnd = raw.indexOf("\n", match.index);
+      const line = raw.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
+      return lineHasInlineAudio(line);
+    });
+
+  if (hasInline) {
+    const segments = [];
+    let last = 0;
+    for (const match of matches) {
+      const before = cleanupExampleText(raw.slice(last, match.index));
+      if (before) segments.push({ type: "text", content: before });
+      segments.push({ type: "audio", file: match.name });
+      last = match.index + match.length;
+    }
+    const after = cleanupExampleText(raw.slice(last));
+    if (after) segments.push({ type: "text", content: after });
+    const text = segments
+      .filter((segment) => segment.type === "text")
+      .map((segment) => segment.content)
+      .join("\n\n");
+    return { files, text, placement: "inline", segments };
+  }
+
+  AUDIO_TOKEN_RE.lastIndex = 0;
+  const text = cleanupExampleText(raw.replace(AUDIO_TOKEN_RE, " "));
+  return { files, text, placement, segments: null };
 }
 
 /** @deprecated Prefer parseAudioCell */
