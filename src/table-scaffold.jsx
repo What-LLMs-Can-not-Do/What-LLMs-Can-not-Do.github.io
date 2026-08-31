@@ -1073,7 +1073,7 @@ export default function Table() {
       }
       if (
         selectedKeywords.size > 0 &&
-        ![...selectedKeywords].every((keyword) => rowHasKeyword(row, keyword))
+        ![...selectedKeywords].some((keyword) => rowHasKeyword(row, keyword))
       ) {
         return false;
       }
