@@ -50,7 +50,6 @@ const NARROW_COLUMNS = new Set([
   "ID",
   "Language(s)",
   "Model(s) tested",
-  "Links",
 ]);
 
 const WHO_IS_BETTER_LEAF_COLUMNS = new Set([
@@ -210,6 +209,9 @@ function LinksCell({ row }) {
 }
 
 function columnWidthClass(columnId) {
+  if (columnId === "Links") {
+    return "w-max max-w-max";
+  }
   if (WHO_IS_BETTER_LEAF_COLUMNS.has(columnId) || columnId.startsWith("Open-source")) {
     return "max-w-28";
   }
