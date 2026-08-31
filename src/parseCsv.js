@@ -53,6 +53,7 @@ const EXCLUDED_COLUMNS = new Set([
   "Dataset Link",
   "Other Links",
   "Link",
+  "Num chars in summary",
 ]);
 
 const HIDDEN_COLUMNS = new Set([
