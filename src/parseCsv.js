@@ -61,6 +61,9 @@ const HIDDEN_COLUMNS = new Set([
   "Abstract",
   "Benchmark Example",
   "Benchmark Audio",
+  "Human benchmark?",
+  "Year of publication",
+  "Model(s) tested",
 ]);
 
 const AUDIO_TOKEN_RE = /\b([A-Za-z0-9][A-Za-z0-9._/-]*\.(?:mp3|wav))\b/gi;
@@ -208,7 +211,7 @@ export function tableRowToContributionForm(row) {
     Keywords: row.Keywords ?? "",
     "Paper title": row["Paper title"] ?? "",
     License: row.License ?? "",
-    "Language(s) tested": row["Language(s) tested"] ?? "",
+    "Language(s)": row["Language(s)"] ?? row["Language(s) tested"] ?? "",
     "Model(s) tested": row["Model(s) tested"] ?? "",
     "Year of publication": row["Year of publication"] ?? "",
     "Paper Link": row["Paper Link"] ?? row.Link ?? "",

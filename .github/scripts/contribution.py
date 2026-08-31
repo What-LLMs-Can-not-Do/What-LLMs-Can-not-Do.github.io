@@ -73,7 +73,7 @@ def field_map_from_data(data: dict, row_id: str = "") -> dict[str, str]:
         "Keywords": data.get("Keywords", ""),
         "Paper title": data.get("Paper title", ""),
         "License": data.get("License", ""),
-        "Language(s) tested": data.get("Language(s) tested", ""),
+        "Language(s)": data.get("Language(s)", "") or data.get("Language(s) tested", ""),
         "Model(s) tested": data.get("Model(s) tested", ""),
         "Year of publication": data.get("Year of publication", ""),
         "Paper Link": data.get("Paper Link", "") or data.get("Link", ""),

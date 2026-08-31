@@ -24,6 +24,7 @@ import {
 } from "./parseCsv.js";
 
 const PREVIEW_COUNT = 3;
+const KEYWORD_PREVIEW_COUNT = 5;
 
 const CATEGORY_STYLES = {
   Modality: { background: "#ccfbf1", color: "#0f766e", border: "#99f6e4" },
@@ -47,7 +48,7 @@ const CATEGORY_ROW_COLORS = {
 
 const NARROW_COLUMNS = new Set([
   "ID",
-  "Language(s) tested",
+  "Language(s)",
   "Model(s) tested",
   "Links",
 ]);
@@ -60,7 +61,7 @@ const WHO_IS_BETTER_LEAF_COLUMNS = new Set([
 
 const MEDIUM_NARROW_COLUMNS = new Set(["Keywords"]);
 
-const REDUCED_COLUMNS = new Set(["Paper title", "Summary"]);
+const REDUCED_COLUMNS = new Set(["Paper title"]);
 
 function linkHostname(url) {
   try {
@@ -219,10 +220,13 @@ function columnWidthClass(columnId) {
     return "max-w-40";
   }
   if (MEDIUM_NARROW_COLUMNS.has(columnId)) {
-    return "max-w-52";
+    return "max-w-64";
   }
   if (REDUCED_COLUMNS.has(columnId)) {
     return "max-w-56";
+  }
+  if (columnId === "Summary") {
+    return "max-w-80";
   }
   return "max-w-md";
 }
@@ -286,13 +290,16 @@ function LanguagesCell({ value, expanded }) {
   );
 }
 
-function KeywordsCell({ value, keywordCategories }) {
+function KeywordsCell({ value, keywordCategories, expanded }) {
   const keywords = sortKeywords(splitKeywords(value), keywordCategories);
   if (keywords.length === 0) return null;
 
+  const visible = expanded ? keywords : keywords.slice(0, KEYWORD_PREVIEW_COUNT);
+  const remaining = keywords.length - visible.length;
+
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {keywords.map((keyword) => {
+    <div className="flex flex-wrap gap-1.5 items-center">
+      {visible.map((keyword) => {
         const category =
           keywordCategories.get(keyword) ?? keywordCategories.get(keyword.toLowerCase());
         const style = CATEGORY_STYLES[category] ?? FALLBACK_STYLE;
@@ -311,14 +318,20 @@ function KeywordsCell({ value, keywordCategories }) {
           </span>
         );
       })}
+      {remaining > 0 ? (
+        <span className="text-xs text-slate-500">+{remaining}</span>
+      ) : null}
     </div>
   );
 }
 
 function KeywordFilterBar({ keywords, selected, onToggle, onClear }) {
+  const [openCategory, setOpenCategory] = useState(null);
+
   if (keywords.length === 0) return null;
 
   const groups = groupKeywordsByCategory(keywords);
+  const keywordCategory = new Map(keywords.map(({ keyword, category }) => [keyword, category]));
 
   return (
     <div className="mb-4">
@@ -334,41 +347,103 @@ function KeywordFilterBar({ keywords, selected, onToggle, onClear }) {
           </button>
         )}
       </div>
-      <div className="grid gap-x-4 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+
+      <div className="flex flex-wrap gap-1.5">
         {groups.map(({ category, keywords: items }) => {
           const style = CATEGORY_STYLES[category] ?? FALLBACK_STYLE;
+          const selectedCount = items.filter(({ keyword }) => selected.has(keyword)).length;
+          const isOpen = openCategory === category;
+
           return (
-            <div key={category}>
-              <div className="mb-1 text-xs font-medium text-gray-600">{category}</div>
-              <div className="flex flex-wrap gap-1.5">
-                {items.map(({ keyword }) => {
-                  const isSelected = selected.has(keyword);
-                  return (
-                    <button
-                      key={keyword}
-                      type="button"
-                      title={`${category}: ${keyword}`}
-                      onClick={() => onToggle(keyword)}
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border transition ${
-                        isSelected
-                          ? "ring-2 ring-offset-1 ring-slate-400 scale-105"
-                          : "opacity-90 hover:opacity-100"
-                      }`}
-                      style={{
-                        backgroundColor: style.background,
-                        color: style.color,
-                        borderColor: style.border,
-                      }}
-                    >
-                      {keyword}
-                    </button>
-                  );
-                })}
-              </div>
+            <div
+              key={category}
+              className="relative"
+              onMouseEnter={() => setOpenCategory(category)}
+              onMouseLeave={() => setOpenCategory(null)}
+            >
+              <span
+                aria-expanded={isOpen}
+                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${
+                  isOpen || selectedCount > 0
+                    ? "ring-2 ring-offset-1 ring-slate-400"
+                    : "opacity-90"
+                }`}
+                style={{
+                  backgroundColor: style.background,
+                  color: style.color,
+                  borderColor: style.border,
+                }}
+              >
+                {category}
+                {selectedCount > 0 ? (
+                  <span className="rounded-full bg-white/70 px-1.5 text-[10px] font-semibold leading-none">
+                    {selectedCount}
+                  </span>
+                ) : null}
+              </span>
+              {isOpen && (
+                <div className="absolute left-0 top-full z-30 pt-1">
+                  <div className="w-max max-w-xs rounded-md border border-slate-200 bg-white p-2 shadow-lg">
+                    <div className="flex max-w-xs flex-wrap gap-1.5">
+                      {items.map(({ keyword }) => {
+                        const isSelected = selected.has(keyword);
+                        return (
+                          <button
+                            key={keyword}
+                            type="button"
+                            title={keyword}
+                            onClick={() => onToggle(keyword)}
+                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border transition ${
+                              isSelected
+                                ? "ring-2 ring-offset-1 ring-slate-400 scale-105"
+                                : "opacity-90 hover:opacity-100"
+                            }`}
+                            style={{
+                              backgroundColor: style.background,
+                              color: style.color,
+                              borderColor: style.border,
+                            }}
+                          >
+                            {keyword}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
       </div>
+
+      {selected.size > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {[...selected].map((keyword) => {
+            const category = keywordCategory.get(keyword);
+            const style = CATEGORY_STYLES[category] ?? FALLBACK_STYLE;
+            return (
+              <button
+                key={keyword}
+                type="button"
+                title={category ? `${category}: ${keyword}` : keyword}
+                onClick={() => onToggle(keyword)}
+                className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border ring-2 ring-offset-1 ring-slate-400"
+                style={{
+                  backgroundColor: style.background,
+                  color: style.color,
+                  borderColor: style.border,
+                }}
+              >
+                {keyword}
+                <span aria-hidden="true" className="opacity-60">
+                  ×
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -377,7 +452,7 @@ function CategoryFilterBar({ categories, selected, onToggle, onClear }) {
   if (categories.length === 0) return null;
 
   return (
-    <div className="mb-4">
+    <div>
       <div className="flex flex-wrap items-center gap-2 mb-2">
         <span className="text-sm font-medium text-gray-700">Category</span>
         {selected.size > 0 && (
@@ -409,6 +484,31 @@ function CategoryFilterBar({ categories, selected, onToggle, onClear }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+function ExactWordSearchFilter({ value, onChange }) {
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2 mb-2">
+        <span className="text-sm font-medium text-gray-700">Exact word search</span>
+        {value ? (
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            className="text-xs text-gray-500 underline hover:text-gray-700"
+          >
+            Clear
+          </button>
+        ) : null}
+      </div>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Search table text…"
+        className="w-full rounded border border-slate-200 bg-white px-3 py-1.5 text-sm shadow-sm"
+      />
     </div>
   );
 }
@@ -606,7 +706,7 @@ function languageMatchKeys(language) {
 
 function rowHasLanguage(row, language) {
   const targets = new Set(languageMatchKeys(language));
-  return splitKeywords(row["Language(s) tested"]).some((item) =>
+  return splitKeywords(row["Language(s)"] ?? row["Language(s) tested"]).some((item) =>
     targets.has(item.toLowerCase())
   );
 }
@@ -655,11 +755,11 @@ function leafColumn(header, { releaseDates, keywordCategories }) {
           />
         );
       }
-      if (header === "Language(s) tested") {
+      if (header === "Language(s)" || header === "Language(s) tested") {
         return <LanguagesCell value={value} expanded={row.getIsExpanded()} />;
       }
       if (header === "Keywords") {
-        return <KeywordsCell value={value} keywordCategories={keywordCategories} />;
+        return <KeywordsCell value={value} keywordCategories={keywordCategories} expanded={row.getIsExpanded()} />;
       }
       if (header === "Human benchmark?" || header === "Human comparison?") {
         return formatHumanBenchmark(value);
@@ -726,7 +826,7 @@ function buildColumns(headers, ctx) {
   return columns;
 }
 
-function expandedFields(row) {
+function expandedBenchmarkField(row) {
   const fromExample = parseAudioCell(row["Benchmark Example"]);
   const fromAudio = parseAudioCell(row["Benchmark Audio"]);
 
@@ -742,24 +842,63 @@ function expandedFields(row) {
   const textParts = [fromExample.text, fromAudio.text].filter(Boolean);
   const text = textParts.join("\n\n");
 
+  if (!text && files.length === 0) return null;
+
+  return {
+    text,
+    audio: {
+      files,
+      placement: fromExample.placement === "below" || fromAudio.placement === "below"
+        ? "below"
+        : fromExample.placement,
+      segments: fromExample.segments,
+    },
+  };
+}
+
+function expandedFields(row) {
   const fields = [];
-  if (text || files.length > 0) {
-    fields.push([
-      "Benchmark Example",
-      text,
-      {
-        files,
-        placement: fromExample.placement === "below" || fromAudio.placement === "below"
-          ? "below"
-          : fromExample.placement,
-        segments: fromExample.segments,
-      },
-    ]);
+  const benchmark = expandedBenchmarkField(row);
+  if (benchmark) {
+    fields.push(["Benchmark Example", benchmark.text, benchmark.audio]);
   }
   if (row.Abstract?.trim()) {
-    fields.push(["Abstract", row.Abstract, []]);
+    fields.push(["Abstract", row.Abstract, {}]);
   }
   return fields;
+}
+
+function ExpandedRowDetail({ row, releaseDates }) {
+  const benchmark = expandedBenchmarkField(row);
+  const models = row["Model(s) tested"]?.trim();
+  const abstract = row.Abstract?.trim();
+
+  return (
+    <div className="space-y-3">
+      {(benchmark || models) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+          {benchmark && (
+            <div>
+              <div className="font-medium text-gray-700 mb-1">Benchmark Example</div>
+              <BenchmarkExampleContent text={benchmark.text} audio={benchmark.audio} />
+            </div>
+          )}
+          {models && (
+            <div>
+              <div className="font-medium text-gray-700 mb-1">Model(s) tested</div>
+              <ModelsCell value={models} expanded releaseDates={releaseDates} />
+            </div>
+          )}
+        </div>
+      )}
+      {abstract && (
+        <div>
+          <div className="font-medium text-gray-700 mb-1">Abstract</div>
+          <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{abstract}</div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ExampleAudioPlayers({ files, placement = "above", inline = false }) {
@@ -875,7 +1014,7 @@ export default function Table() {
   const languageOptions = useMemo(() => {
     const values = [...LANGUAGE_FILTER_EXTRA_OPTIONS];
     for (const row of data) {
-      values.push(...splitKeywords(row["Language(s) tested"]));
+      values.push(...splitKeywords(row["Language(s)"] ?? row["Language(s) tested"]));
     }
     return uniqueSorted(values);
   }, [data]);
@@ -1050,12 +1189,15 @@ export default function Table() {
 
   return (
     <div className="w-full px-4 py-6 sm:px-8 lg:px-12 text-xs text-left text-gray-800 sm:text-sm">
-      <CategoryFilterBar
-        categories={categoryOptions}
-        selected={selectedCategories}
-        onToggle={toggleCategory}
-        onClear={() => setSelectedCategories(new Set())}
-      />
+      <div className="mb-4 grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <CategoryFilterBar
+          categories={categoryOptions}
+          selected={selectedCategories}
+          onToggle={toggleCategory}
+          onClear={() => setSelectedCategories(new Set())}
+        />
+        <ExactWordSearchFilter value={globalFilter} onChange={setGlobalFilter} />
+      </div>
 
       <KeywordFilterBar
         keywords={usedKeywordList}
@@ -1094,15 +1236,8 @@ export default function Table() {
         />
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <input
-          value={globalFilter}
-          onChange={(e) => setGlobalFilter(e.target.value)}
-          placeholder="Filter..."
-          className="border border-slate-200 bg-white rounded px-3 py-1.5 text-sm shadow-sm"
-        />
-        <div className="flex flex-wrap gap-3">
-          {table.getAllLeafColumns().map((col) => (
+      <div className="mb-4 flex flex-wrap gap-3">
+        {table.getAllLeafColumns().map((col) => (
             <label key={col.id} className="flex items-center gap-1 text-gray-600">
               <input
                 type="checkbox"
@@ -1116,7 +1251,6 @@ export default function Table() {
                   : col.id}
             </label>
           ))}
-        </div>
       </div>
 
       <div
@@ -1199,21 +1333,10 @@ export default function Table() {
                     >
                       <td colSpan={row.getVisibleCells().length} className="p-0 bg-transparent">
                         <div
-                          className="sticky left-0 box-border px-4 py-3 space-y-3 text-gray-600"
+                          className="sticky left-0 box-border px-4 py-3 text-gray-600"
                           style={{ width: panelWidth || "100%" }}
                         >
-                          {expandedFields(row.original).map(([label, value, audio = {}]) => (
-                            <div key={label}>
-                              <div className="font-medium text-gray-700 mb-1">{label}</div>
-                              {label === "Benchmark Example" ? (
-                                <BenchmarkExampleContent text={value} audio={audio} />
-                              ) : value?.trim() ? (
-                                <div className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                                  {value}
-                                </div>
-                              ) : null}
-                            </div>
-                          ))}
+                          <ExpandedRowDetail row={row.original} releaseDates={releaseDates} />
                         </div>
                       </td>
                     </tr>

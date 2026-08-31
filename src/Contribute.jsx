@@ -221,7 +221,7 @@ const initialForm = {
   Keywords: "",
   "Paper title": "",
   License: "",
-  "Language(s) tested": "",
+  "Language(s)": "",
   "Model(s) tested": "",
   "Year of publication": "",
   "Paper Link": "",
@@ -641,12 +641,12 @@ export default function Contribute() {
           <section className="space-y-4">
             <h2 className="text-lg font-semibold text-slate-900">Evaluation details</h2>
             <Field
-              label="Language(s) tested"
+              label="Language(s)"
               hint="Comma-separated. Glottolog official names; if not in Glottolog (e.g. conlangs), use the Wikipedia name; otherwise use your best judgment."
             >
               <input
-                value={form["Language(s) tested"]}
-                onChange={update("Language(s) tested")}
+                value={form["Language(s)"]}
+                onChange={update("Language(s)")}
                 className={FIELD_CLASS}
               />
             </Field>
