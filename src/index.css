@@ -47,6 +47,28 @@ tr.category-row:has(+ tr.category-detail:hover) {
   background-size: 100% 100%;
 }
 
+.languages-scroll-body {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.languages-scroll-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.languages-scroll-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.languages-scroll-body::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+.languages-scroll-body::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
 #root {
   width: 100%;
   max-width: none;

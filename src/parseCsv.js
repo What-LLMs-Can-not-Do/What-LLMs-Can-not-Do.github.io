@@ -312,6 +312,150 @@ export function splitModels(value) {
     .filter(Boolean);
 }
 
+function compactModelKey(name) {
+  return name
+    .replace(/^[^/\s]+\/(?=[A-Za-z])/, "")
+    .replace(/^[(\[]+|[)\]]+$/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+/** Map a listed model name to its family (GPT-5, Claude, Llama 3.1, …). */
+export function modelFamily(name) {
+  const compact = compactModelKey(name);
+
+  if (compact.includes("deepseek")) {
+    if (compact.includes("r1")) return "DeepSeek R1";
+    if (compact.includes("v3") || /^deepseek3/.test(compact)) return "DeepSeek V3";
+    if (compact.includes("v2")) return "DeepSeek V2";
+    if (/deepseek4/.test(compact)) return "DeepSeek 4";
+    return "DeepSeek";
+  }
+
+  if (compact.includes("sealion") || compact.includes("seallm")) return "SEA-LION";
+
+  if (compact.startsWith("claude") || compact.startsWith("sonnet") || compact.startsWith("opus") || compact.startsWith("haiku")) {
+    return "Claude";
+  }
+  if (compact.startsWith("gptoss")) return "GPT-OSS";
+  if (compact.startsWith("chatgpt")) return "ChatGPT";
+  if (/^gpto[1-4]/.test(compact)) return `o${compact.match(/^gpto([1-4])/)[1]}`;
+  if (compact.startsWith("gpt5")) return "GPT-5";
+  if (compact.startsWith("gpt4o")) return "GPT-4o";
+  if (compact.startsWith("gpt41")) return "GPT-4.1";
+  if (compact.startsWith("gpt4")) return "GPT-4";
+  if (compact.startsWith("gpt35")) return "GPT-3.5";
+  if (compact.startsWith("gpt")) return "GPT";
+  if (compact.startsWith("o1")) return "o1";
+  if (compact.startsWith("o3")) return "o3";
+  if (compact.startsWith("o4")) return "o4";
+
+  if (compact.startsWith("gemini3")) return "Gemini 3";
+  if (compact.startsWith("gemini25")) return "Gemini 2.5";
+  if (compact.startsWith("gemini2")) return "Gemini 2";
+  if (compact.startsWith("gemini1")) return "Gemini 1.5";
+  if (compact.startsWith("learnlm")) return "LearnLM";
+  if (compact.startsWith("gemini")) return "Gemini";
+  if (compact.startsWith("gemma")) return "Gemma";
+
+  if (compact.includes("tinyllama")) return "TinyLlama";
+  if (
+    compact.startsWith("llama") ||
+    compact.includes("llama2") ||
+    compact.includes("llama3") ||
+    compact.includes("llama4") ||
+    /^\d+bllama/.test(compact) ||
+    compact.includes("maverick") ||
+    compact.includes("scout")
+  ) {
+    if (compact.includes("llama4") || compact.includes("maverick") || compact.includes("scout")) return "Llama 4";
+    if (compact.includes("llama33")) return "Llama 3.3";
+    if (compact.includes("llama32")) return "Llama 3.2";
+    if (compact.includes("llama31")) return "Llama 3.1";
+    if (compact.includes("llama3")) return "Llama 3";
+    if (compact.includes("llama2")) return "Llama 2";
+    return "Llama";
+  }
+
+  if (compact.startsWith("qwen3") || compact.includes("qwen3")) return "Qwen3";
+  if (compact.startsWith("qwen25")) return "Qwen2.5";
+  if (compact.startsWith("qwen2")) return "Qwen2";
+  if (compact.startsWith("qwen") || /(?:^|\d)qwen/.test(compact)) return "Qwen";
+  if (compact.startsWith("qwq")) return "QwQ";
+  if (compact.startsWith("qvq")) return "QVQ";
+
+  if (compact.startsWith("grok4")) return "Grok 4";
+  if (compact.startsWith("grok3")) return "Grok 3";
+  if (compact.startsWith("grok")) return "Grok";
+
+  if (compact.startsWith("kimi")) {
+    if (compact.includes("k3")) return "Kimi K3";
+    if (compact.includes("k2")) return "Kimi K2";
+    return "Kimi";
+  }
+
+  if (compact.startsWith("glm")) {
+    if (compact.startsWith("glm5")) return "GLM 5";
+    if (compact.startsWith("glm4")) return "GLM 4";
+    return "GLM";
+  }
+
+  if (compact.includes("mixtral")) return "Mixtral";
+  if (compact.includes("mistral") || compact.includes("ministral")) return "Mistral";
+  if (compact.includes("phi")) return "Phi";
+  if (compact.startsWith("olmo")) return "OLMo";
+  if (compact.includes("falcon")) return "Falcon";
+  if (compact.includes("aya")) return "Aya";
+  if (compact.includes("audioflamingo")) return "Audio Flamingo";
+  if (compact.includes("smollm")) return "SmolLM";
+  if (compact.includes("eurollm")) return "EuroLLM";
+  if (compact.includes("sailor")) return "Sailor";
+  if (compact.includes("salamandra")) return "Salamandra";
+  if (compact.includes("babel")) return "Babel";
+  if (compact.startsWith("dolly")) return "Dolly";
+  if (compact.includes("internlm")) return "InternLM";
+  if (compact.includes("vicuna")) return "Vicuna";
+  if (compact.startsWith("bloomz")) return "BLOOMZ";
+  if (compact.startsWith("ernie")) return "ERNIE";
+  if (compact.includes("minimax")) return "MiniMax";
+  if (compact.includes("stepaudio") || compact.startsWith("step")) return "Step-Audio";
+  if (compact.startsWith("mimo")) return "MiMo";
+  if (compact.includes("baichuan")) return "Baichuan";
+  if (compact.startsWith("nova")) return "Nova";
+
+  const stripped = name
+    .replace(/^[^/\s]+\/(?=[A-Za-z])/, "")
+    .replace(/^[(\[]+|[)\]]+$/g, "")
+    .replace(/\b\d+(\.\d+)?\s*[Bb]\b/g, " ")
+    .replace(/\b(instruct|chat|turbo|preview|thinking|think|base|it|hf)\b/gi, " ")
+    .replace(/[-_.:/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const tokens = stripped.split(" ").filter(Boolean);
+  if (tokens.length === 0) return name.trim() || "Other";
+  if (tokens[1] && /^\d/.test(tokens[1])) return `${tokens[0]} ${tokens[1]}`;
+  return tokens[0];
+}
+
+export function groupModelsByFamily(models, releaseDates) {
+  const sorted = sortModelsByReleaseDate(models, releaseDates);
+  const groups = [];
+  const indexByFamily = new Map();
+
+  for (const model of sorted) {
+    const family = modelFamily(model);
+    const existing = indexByFamily.get(family);
+    if (existing === undefined) {
+      indexByFamily.set(family, groups.length);
+      groups.push({ family, variants: [model] });
+    } else {
+      groups[existing].variants.push(model);
+    }
+  }
+
+  return groups;
+}
+
 export function splitKeywords(value) {
   if (!value?.trim()) return [];
   return value

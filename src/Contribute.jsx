@@ -565,7 +565,7 @@ export default function Contribute() {
                   return (
                     <div key={category}>
                       <div className="mb-1 text-xs font-medium text-slate-600">{category}</div>
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="flex flex-wrap gap-0.5">
                         {keywords.map(({ keyword }) => {
                           const isSelected = hasKeyword(selectedKeywords, keyword);
                           return (
@@ -574,9 +574,9 @@ export default function Contribute() {
                               type="button"
                               title={`${category}: ${keyword}`}
                               onClick={() => toggleKeyword(keyword)}
-                              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border transition ${
+                              className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-xs font-medium transition ${
                                 isSelected
-                                  ? "ring-2 ring-offset-1 ring-slate-400 scale-105"
+                                  ? "ring-2 ring-offset-0 ring-slate-400 scale-105"
                                   : "opacity-90 hover:opacity-100"
                               }`}
                               style={{

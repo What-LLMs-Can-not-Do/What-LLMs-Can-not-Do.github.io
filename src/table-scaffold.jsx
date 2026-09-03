@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   useReactTable,
   getCoreRowModel,
@@ -17,7 +18,8 @@ import {
   parseKeywords,
   parseReleaseDates,
   parseTableCsv,
-  sortModelsByReleaseDate,
+  groupModelsByFamily,
+  modelFamily,
   sortKeywords,
   splitKeywords,
   splitModels,
@@ -36,6 +38,10 @@ const CATEGORY_STYLES = {
 };
 
 const FALLBACK_STYLE = { background: "#f1f5f9", color: "#475569", border: "#e2e8f0" };
+
+const BADGE_CLASS = "inline-flex items-center rounded-full border px-1.5 py-0.5 text-xs font-medium";
+const BADGE_WRAP = "flex flex-wrap gap-0.5 items-center";
+const BADGE_RING = "ring-2 ring-offset-0 ring-slate-400";
 
 const CATEGORY_ROW_COLORS = {
   "Expert Knowledge": "#bfdbfe",
@@ -61,6 +67,12 @@ const WHO_IS_BETTER_LEAF_COLUMNS = new Set([
 const MEDIUM_NARROW_COLUMNS = new Set(["Keywords"]);
 
 const REDUCED_COLUMNS = new Set(["Paper title"]);
+
+const WHO_IS_BETTER_STYLES = {
+  humans: { background: "#dcfce7", color: "#166534", border: "#bbf7d0" },
+  llms: { background: "#dbeafe", color: "#1e40af", border: "#bfdbfe" },
+  neutral: { background: "#f1f5f9", color: "#64748b", border: "#e2e8f0" },
+};
 
 function linkHostname(url) {
   try {
@@ -213,7 +225,7 @@ function columnWidthClass(columnId) {
     return "w-max max-w-max";
   }
   if (WHO_IS_BETTER_LEAF_COLUMNS.has(columnId) || columnId.startsWith("Open-source")) {
-    return "max-w-28";
+    return "w-px whitespace-nowrap px-1.5";
   }
   if (columnId === "License") {
     return "max-w-28";
@@ -222,7 +234,7 @@ function columnWidthClass(columnId) {
     return "max-w-40";
   }
   if (MEDIUM_NARROW_COLUMNS.has(columnId)) {
-    return "max-w-64";
+    return "max-w-52";
   }
   if (REDUCED_COLUMNS.has(columnId)) {
     return "max-w-56";
@@ -235,20 +247,48 @@ function columnWidthClass(columnId) {
 
 function formatCellValue(value) {
   if (value === "Humans (by assumption)") {
+    return "Humans";
+  }
+  if (value === "Humans (trivial)") {
     return (
       <>
         Humans<sup>†</sup>
       </>
     );
   }
-  if (value === "Humans (trivial)") {
-    return (
-      <>
-        Humans<sup>‡</sup>
-      </>
-    );
+  if (value === "Not tested") {
+    return "Untested";
   }
   return value;
+}
+
+function whoIsBetterStyle(value) {
+  const normalized = value?.trim();
+  if (!normalized) return null;
+  if (normalized === "LLMs") return WHO_IS_BETTER_STYLES.llms;
+  if (normalized === "Not tested") return WHO_IS_BETTER_STYLES.neutral;
+  if (normalized === "Humans" || normalized.startsWith("Humans")) {
+    return WHO_IS_BETTER_STYLES.humans;
+  }
+  return WHO_IS_BETTER_STYLES.neutral;
+}
+
+function WhoIsBetterCell({ value }) {
+  const style = whoIsBetterStyle(value);
+  if (!style) return null;
+
+  return (
+    <span
+      className={BADGE_CLASS}
+      style={{
+        backgroundColor: style.background,
+        color: style.color,
+        borderColor: style.border,
+      }}
+    >
+      {formatCellValue(value)}
+    </span>
+  );
 }
 
 function formatHumanBenchmark(value) {
@@ -263,23 +303,74 @@ function formatHumanBenchmark(value) {
 }
 
 function ModelsCell({ value, expanded, releaseDates }) {
-  const models = sortModelsByReleaseDate(splitModels(value), releaseDates);
-  if (models.length === 0) return null;
+  const [hovered, setHovered] = useState(null);
+  const families = groupModelsByFamily(splitModels(value), releaseDates);
+  if (families.length === 0) return null;
 
-  const visible = expanded ? models : models.slice(0, PREVIEW_COUNT);
-  const remaining = models.length - visible.length;
+  const visible = expanded ? families : families.slice(0, PREVIEW_COUNT);
+  const remaining = families.length - visible.length;
 
   return (
-    <span>
-      {visible.join(", ")}
-      {remaining > 0 ? `, … (+${remaining})` : null}
-    </span>
+    <div className={BADGE_WRAP}>
+      {visible.map(({ family, variants }) => (
+        <span
+          key={family}
+          className={`${BADGE_CLASS} cursor-default border-slate-200 bg-white/70 text-slate-700`}
+          onClick={(event) => event.stopPropagation()}
+          onMouseEnter={(event) => {
+            const rect = event.currentTarget.getBoundingClientRect();
+            setHovered({
+              family,
+              variants,
+              x: rect.left,
+              y: rect.bottom,
+            });
+          }}
+          onMouseLeave={() => setHovered(null)}
+        >
+          {family}
+          {variants.length > 1 ? (
+            <span className="ml-0.5 text-[10px] font-semibold text-slate-400">
+              {variants.length}
+            </span>
+          ) : null}
+        </span>
+      ))}
+      {remaining > 0 ? (
+        <span className="text-xs text-slate-500">+{remaining}</span>
+      ) : null}
+      {hovered
+        ? createPortal(
+            <div
+              className="pointer-events-none fixed z-[80] max-w-xs rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs leading-relaxed text-slate-600 shadow-lg"
+              style={{ left: hovered.x, top: hovered.y + 6 }}
+            >
+              {hovered.variants.join(", ")}
+            </div>,
+            document.body
+          )
+        : null}
+    </div>
   );
 }
 
 function LanguagesCell({ value, expanded }) {
   const languages = splitKeywords(value);
   if (languages.length === 0) return null;
+
+  if (expanded && languages.length > 50) {
+    return (
+      <div
+        className="languages-scroll relative max-w-full overflow-hidden rounded-lg bg-white/35 backdrop-blur-[2px]"
+        onClick={(event) => event.stopPropagation()}
+        onWheel={(event) => event.stopPropagation()}
+      >
+        <div className="languages-scroll-body max-h-28 overflow-y-auto px-2.5 py-2 text-[13px] leading-relaxed text-slate-700">
+          {languages.join(", ")}
+        </div>
+      </div>
+    );
+  }
 
   const visible = expanded ? languages : languages.slice(0, PREVIEW_COUNT);
   const remaining = languages.length - visible.length;
@@ -300,7 +391,7 @@ function KeywordsCell({ value, keywordCategories, expanded }) {
   const remaining = keywords.length - visible.length;
 
   return (
-    <div className="flex flex-wrap gap-1.5 items-center">
+    <div className={BADGE_WRAP}>
       {visible.map((keyword) => {
         const category =
           keywordCategories.get(keyword) ?? keywordCategories.get(keyword.toLowerCase());
@@ -309,7 +400,7 @@ function KeywordsCell({ value, keywordCategories, expanded }) {
           <span
             key={keyword}
             title={category ? `${category}: ${keyword}` : keyword}
-            className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border"
+            className={BADGE_CLASS}
             style={{
               backgroundColor: style.background,
               color: style.color,
@@ -350,7 +441,7 @@ function KeywordFilterBar({ keywords, selected, onToggle, onClear }) {
         )}
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
+      <div className={BADGE_WRAP}>
         {groups.map(({ category, keywords: items }) => {
           const style = CATEGORY_STYLES[category] ?? FALLBACK_STYLE;
           const selectedCount = items.filter(({ keyword }) => selected.has(keyword)).length;
@@ -365,9 +456,9 @@ function KeywordFilterBar({ keywords, selected, onToggle, onClear }) {
             >
               <span
                 aria-expanded={isOpen}
-                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${
+                className={`${BADGE_CLASS} gap-0.5 transition ${
                   isOpen || selectedCount > 0
-                    ? "ring-2 ring-offset-1 ring-slate-400"
+                    ? BADGE_RING
                     : "opacity-90"
                 }`}
                 style={{
@@ -378,7 +469,7 @@ function KeywordFilterBar({ keywords, selected, onToggle, onClear }) {
               >
                 {category}
                 {selectedCount > 0 ? (
-                  <span className="rounded-full bg-white/70 px-1.5 text-[10px] font-semibold leading-none">
+                  <span className="rounded-full bg-white/70 px-1 text-[10px] font-semibold leading-none">
                     {selectedCount}
                   </span>
                 ) : null}
@@ -386,7 +477,7 @@ function KeywordFilterBar({ keywords, selected, onToggle, onClear }) {
               {isOpen && (
                 <div className="absolute left-0 top-full z-30 pt-1">
                   <div className="w-max max-w-xs rounded-md border border-slate-200 bg-white p-2 shadow-lg">
-                    <div className="flex max-w-xs flex-wrap gap-1.5">
+                    <div className={`max-w-xs ${BADGE_WRAP}`}>
                       {items.map(({ keyword }) => {
                         const isSelected = selected.has(keyword);
                         return (
@@ -395,9 +486,9 @@ function KeywordFilterBar({ keywords, selected, onToggle, onClear }) {
                             type="button"
                             title={keyword}
                             onClick={() => onToggle(keyword)}
-                            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border transition ${
+                            className={`${BADGE_CLASS} transition ${
                               isSelected
-                                ? "ring-2 ring-offset-1 ring-slate-400 scale-105"
+                                ? `${BADGE_RING} scale-105`
                                 : "opacity-90 hover:opacity-100"
                             }`}
                             style={{
@@ -420,7 +511,7 @@ function KeywordFilterBar({ keywords, selected, onToggle, onClear }) {
       </div>
 
       {selected.size > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className={`mt-2 ${BADGE_WRAP}`}>
           {[...selected].map((keyword) => {
             const category = keywordCategory.get(keyword);
             const style = CATEGORY_STYLES[category] ?? FALLBACK_STYLE;
@@ -430,7 +521,7 @@ function KeywordFilterBar({ keywords, selected, onToggle, onClear }) {
                 type="button"
                 title={category ? `${category}: ${keyword}` : keyword}
                 onClick={() => onToggle(keyword)}
-                className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium border ring-2 ring-offset-1 ring-slate-400"
+                className={`${BADGE_CLASS} gap-0.5 ${BADGE_RING}`}
                 style={{
                   backgroundColor: style.background,
                   color: style.color,
@@ -467,7 +558,7 @@ function CategoryFilterBar({ categories, selected, onToggle, onClear }) {
           </button>
         )}
       </div>
-      <div className="flex flex-wrap gap-1.5">
+      <div className={BADGE_WRAP}>
         {categories.map((category) => {
           const background = CATEGORY_ROW_COLORS[category] ?? FALLBACK_STYLE.background;
           const isSelected = selected.has(category);
@@ -476,8 +567,8 @@ function CategoryFilterBar({ categories, selected, onToggle, onClear }) {
               key={category}
               type="button"
               onClick={() => onToggle(category)}
-              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium border border-black/10 text-slate-800 transition ${
-                isSelected ? "ring-2 ring-offset-1 ring-slate-400 scale-105" : "opacity-90 hover:opacity-100"
+              className={`${BADGE_CLASS} border-black/10 text-slate-800 transition ${
+                isSelected ? `${BADGE_RING} scale-105` : "opacity-90 hover:opacity-100"
               }`}
               style={{ backgroundColor: background }}
             >
@@ -623,13 +714,13 @@ function AutocompleteMultiFilter({ label, options, selected, onAdd, onRemove, on
         )}
       </div>
       <div className="relative">
-        <div className="flex flex-wrap items-center gap-1.5 rounded border border-slate-200 bg-white px-2 py-1.5 shadow-sm focus-within:border-slate-400">
+        <div className={`${BADGE_WRAP} rounded border border-slate-200 bg-white px-1.5 py-1 shadow-sm focus-within:border-slate-400`}>
           {[...selected].map((value) => (
             <button
               key={value}
               type="button"
               onClick={() => onRemove(value)}
-              className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+              className={`${BADGE_CLASS} gap-0.5 border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100`}
             >
               {value}
               <span aria-hidden="true" className="text-slate-400">
@@ -714,9 +805,11 @@ function rowHasLanguage(row, language) {
 }
 
 function rowHasModel(row, model) {
-  return splitModels(row["Model(s) tested"]).some(
-    (item) => item.toLowerCase() === model.toLowerCase()
-  );
+  const needle = model.toLowerCase();
+  return splitModels(row["Model(s) tested"]).some((item) => {
+    if (item.toLowerCase() === needle) return true;
+    return modelFamily(item).toLowerCase() === needle;
+  });
 }
 
 function rowHasLicense(row, license) {
@@ -746,12 +839,20 @@ function leafColumn(header, { releaseDates, keywordCategories }) {
     accessorKey: header,
     id: header,
     header: displayHeader,
+    ...(header === "Model(s) tested"
+      ? {
+          accessorFn: (row) => {
+            const models = splitModels(row["Model(s) tested"]);
+            return [...models, ...models.map(modelFamily)].join(" ");
+          },
+        }
+      : {}),
     cell: ({ getValue, row }) => {
       const value = getValue();
       if (header === "Model(s) tested") {
         return (
           <ModelsCell
-            value={value}
+            value={row.original["Model(s) tested"]}
             expanded={row.getIsExpanded()}
             releaseDates={releaseDates}
           />
@@ -765,6 +866,9 @@ function leafColumn(header, { releaseDates, keywordCategories }) {
       }
       if (header === "Human benchmark?" || header === "Human comparison?") {
         return formatHumanBenchmark(value);
+      }
+      if (isWhoIsBetterColumn(header)) {
+        return <WhoIsBetterCell value={value} />;
       }
       return formatCellValue(value);
     },
@@ -1024,7 +1128,10 @@ export default function Table() {
   const modelOptions = useMemo(() => {
     const values = [];
     for (const row of data) {
-      values.push(...splitModels(row["Model(s) tested"]));
+      for (const model of splitModels(row["Model(s) tested"])) {
+        values.push(model);
+        values.push(modelFamily(model));
+      }
     }
     return uniqueSorted(values);
   }, [data]);
@@ -1225,7 +1332,7 @@ export default function Table() {
           onAdd={addToSet(setSelectedModels)}
           onRemove={removeFromSet(setSelectedModels)}
           onClear={() => setSelectedModels(new Set())}
-          placeholder="Search models…"
+          placeholder="Search models or families…"
         />
         <AutocompleteMultiFilter
           label="License"
@@ -1282,13 +1389,13 @@ export default function Table() {
                           ? header.column.getToggleSortingHandler()
                           : undefined
                       }
-                      className={`py-3 px-3 select-none text-gray-900 font-semibold align-middle bg-slate-100 ${
+                      className={`py-3 select-none text-gray-900 font-semibold align-middle bg-slate-100 ${
                         header.column.id === "Human benchmark?" ||
                         header.column.id === "Human comparison?"
-                          ? "text-left"
+                          ? "text-left px-3"
                           : isGroupedParent || isWhoIsBetterColumn(header.column.id)
                             ? "text-center"
-                            : "text-left whitespace-nowrap"
+                            : "text-left whitespace-nowrap px-3"
                       } ${header.column.getCanSort() ? "cursor-pointer" : ""} ${columnWidthClass(header.column.id)}`}
                     >
                       {flexRender(header.column.columnDef.header, header.getContext())}
@@ -1317,7 +1424,12 @@ export default function Table() {
                     {row.getVisibleCells().map((cell) => (
                       <td
                         key={cell.id}
-                        className={`py-2.5 px-3 align-top whitespace-pre-wrap text-gray-700 bg-transparent ${columnWidthClass(cell.column.id)}`}
+                        className={`py-2.5 align-top text-gray-700 bg-transparent ${
+                          WHO_IS_BETTER_LEAF_COLUMNS.has(cell.column.id) ||
+                          cell.column.id.startsWith("Open-source")
+                            ? "text-center"
+                            : "px-3 whitespace-pre-wrap"
+                        } ${columnWidthClass(cell.column.id)}`}
                         onClick={
                           cell.column.id === "Links"
                             ? (e) => e.stopPropagation()
@@ -1350,11 +1462,8 @@ export default function Table() {
         </table>
       </div>
 
-      <p className="mt-0 mb-2 pt-2 text-xs text-gray-600 sm:text-sm">
-        <sup>†</sup> Open-source models not explicitly tested, however we assume their performance to be less than or equal to closed and open-weight models.
-      </p>
-      <p className="mt-0 mb-6 text-xs text-gray-600 sm:text-sm">
-        <sup>‡</sup> Humans were not tested, but the task is trivial so perfect performance is expected.
+      <p className="mt-0 mb-6 pt-2 text-xs text-gray-600 sm:text-sm">
+        <sup>†</sup> Humans were not tested, but the task is trivial so perfect performance is expected.
       </p>
     </div>
   );
