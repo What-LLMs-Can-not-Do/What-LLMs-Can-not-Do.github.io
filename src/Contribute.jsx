@@ -27,11 +27,6 @@ const WHO_IS_BETTER_OPTIONS = [
   "Humans (trivial)",
 ];
 
-const WHO_IS_BETTER_OPEN_SOURCE_OPTIONS = [
-  ...WHO_IS_BETTER_OPTIONS,
-  "Humans (by assumption)",
-];
-
 const KEYWORD_STYLES = {
   Modality: { background: "#ccfbf1", color: "#0f766e", border: "#99f6e4" },
   Attribute: { background: "#ede9fe", color: "#5b21b6", border: "#ddd6fe" },
@@ -677,11 +672,13 @@ export default function Contribute() {
             <div>
               <p className={LABEL_CLASS}>Who is better?</p>
               <p className="mt-0.5 text-xs text-slate-500">
-                Put &ldquo;Humans (by assumption)&rdquo; only next to open-source models
-                — the assumption is that open-source models are equal to or worse than
-                closed and open-weight models. Put &ldquo;Humans (trivial)&rdquo; for tasks
-                without human evaluation that are nevertheless obviously easy for humans
-                (e.g., make this text all caps).
+                Models are <em>closed</em> if they have no publicly available weights,{" "}
+                <em>open-weight</em> if their weights are available but not their data, and{" "}
+                <em>open-source</em> if their weights and training data are publicly available.
+              </p>
+              <p className="mt-1.5 text-xs text-slate-500">
+                Put &ldquo;Humans (trivial)&rdquo; for tasks without human evaluation that
+                are nevertheless obviously easy for humans (e.g., make this text all caps).
               </p>
               <div className="mt-2 grid gap-4 sm:grid-cols-3">
                 <Field label="Closed">
@@ -703,7 +700,7 @@ export default function Contribute() {
                 <Field label="Open-source">
                   <WhoIsBetterInput
                     listId="who-is-better-open-source"
-                    options={WHO_IS_BETTER_OPEN_SOURCE_OPTIONS}
+                    options={WHO_IS_BETTER_OPTIONS}
                     value={form["Open-source"]}
                     onChange={update("Open-source")}
                   />

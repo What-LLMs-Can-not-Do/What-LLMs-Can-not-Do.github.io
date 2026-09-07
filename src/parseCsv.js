@@ -233,16 +233,43 @@ export function tableRowToContributionForm(row) {
 export const parseData2Csv = parseTableCsv;
 
 export function parseReleaseDates(text) {
-  const rows = parseCsv(text, "\t");
+  const delimiter = text.includes("\t") ? "\t" : ",";
+  const rows = parseCsv(text, delimiter);
   const dates = new Map();
   for (const row of rows) {
     const model = row.model?.trim();
     const date = row.release_date?.trim();
     if (!model || !date) continue;
-    dates.set(model, date);
-    dates.set(model.toLowerCase(), date);
+    const canonical = canonicalizeModelName(model);
+    const identity = modelIdentityKey(model);
+    for (const key of [model, model.toLowerCase(), canonical, canonical.toLowerCase(), identity]) {
+      if (key) dates.set(key, date);
+    }
   }
   return dates;
+}
+
+/** Parse models.csv → Map(model → { family, openness, release_date, link }). */
+export function parseModelsCsv(text) {
+  const delimiter = text.includes("\t") ? "\t" : ",";
+  const rows = parseCsv(text, delimiter);
+  const byModel = new Map();
+  for (const row of rows) {
+    const model = row.model?.trim();
+    if (!model) continue;
+    const entry = {
+      family: row.family?.trim() || "",
+      openness: row.openness?.trim() || "",
+      release_date: row.release_date?.trim() || "",
+      link: row.link?.trim() || row.huggingface?.trim() || "",
+    };
+    const canonical = canonicalizeModelName(model);
+    const identity = modelIdentityKey(model);
+    for (const key of [model, model.toLowerCase(), canonical, canonical.toLowerCase(), identity]) {
+      if (key) byModel.set(key, entry);
+    }
+  }
+  return byModel;
 }
 
 /** Display / sort order for keyword categories (3-col grid: Domain starts row 2). */
@@ -308,7 +335,15 @@ export function splitModels(value) {
   if (!value?.trim()) return [];
   return value
     .split(",")
-    .map((part) => part.trim().replace(/^and\s+/i, "").trim())
+    .flatMap((part) => part.split(/\s+and\s+/i))
+    .map((part) => {
+      let s = part.trim().replace(/^and\s+/i, "").trim();
+      // "Gemini 3: Gemini 3 Pro" / "Gemini-3:-Gemini-3-Pro" → keep after colon
+      if (s.includes(":")) {
+        s = s.slice(s.lastIndexOf(":") + 1).replace(/^-+/, "").trim();
+      }
+      return s.replace(/\s+/g, " ").trim();
+    })
     .filter(Boolean);
 }
 
@@ -320,15 +355,171 @@ function compactModelKey(name) {
     .replace(/[^a-z0-9]+/g, "");
 }
 
+function titleCaseToken(token) {
+  if (!token) return token;
+  if (/^[a-z]+[A-Z]/.test(token)) return token; // already camel-ish (e.g. OpenAI)
+  if (/^(moe|vl|v\d+|r\d+|it|hf|dpo|sft|rl)$/i.test(token)) return token.toUpperCase();
+  if (/^(gpt|glm|olmo|aya|phi|qwen|qwq|qvq|gemma|grok|kimi|ernie|nova|mimo)$/i.test(token)) {
+    return token[0].toUpperCase() + token.slice(1).toLowerCase();
+  }
+  if (/^(oss|vlm|llm|api)$/i.test(token)) return token.toUpperCase();
+  if (/^\d/.test(token)) return token;
+  return token[0].toUpperCase() + token.slice(1);
+}
+
+/** Identity key so aliases like "Claude 3.5 Sonnet" and "Claude-3.5-Sonnet" match. */
+export function modelIdentityKey(name) {
+  let s = String(name ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[^/\s]+\/(?=[A-Za-z0-9])/, "")
+    .replace(/^[(\[]+|[)\]]+$/g, "");
+
+  if (s.includes(":")) {
+    s = s.slice(s.lastIndexOf(":") + 1).replace(/^-+/, "").trim();
+  }
+
+  s = s.replace(/^meta[\s_-]*llms?/i, "Llama");
+  s = s.replace(/^meta[\s_-]*llama/i, "Llama");
+  s = s.replace(/\bllms?\b/gi, "Llama");
+  s = s.replace(/\bllama\b/gi, "Llama");
+
+  // Phi-4 is the 14B model; Phi4-14B / 14B-Phi / Phi-14B → same
+  s = s.replace(/^phi[-_\s]*4[-_\s]*14\s*[Bb]\b/i, "Phi-4");
+  s = s.replace(/^phi[-_\s]*4[-_\s]*mini(?:[-_\s]*\d+(?:\.\d+)?\s*[Bb])?\b/i, "Phi-4-Mini");
+  s = s.replace(/^phi[-_\s]*mini[-_\s]*3\.?8\s*[Bb]\b/i, "Phi-4-Mini");
+  s = s.replace(/^3\.?8\s*[Bb][-_\s]*phi\b/i, "Phi-4-Mini");
+
+  // Size-first aliases: 14B-Phi → Phi-14B, 8B-Llama → Llama-8B
+  s = s.replace(/^(\d+(?:\.\d+)?\s*[Bb])[-_\s]+(.+)$/, "$2-$1");
+  s = s.replace(/^phi[-_\s]*14\s*[Bb]\b/i, "Phi-4");
+  s = s.replace(/^phi[-_\s]*3\.?8\s*[Bb]\b/i, "Phi-4-Mini");
+
+  if (/^(sonnet|opus|haiku)\b/i.test(s) && !/claude/i.test(s)) {
+    s = `Claude ${s}`;
+  }
+  s = s.replace(
+    /^claude[\s_-]*(sonnet|opus|haiku)[\s_-]*(\d+(?:\.\d+)?)/i,
+    "Claude $2 $1"
+  );
+  s = s.replace(
+    /^claude[\s_-]*(\d+(?:\.\d+)?)[\s_-]*(sonnet|opus|haiku)/i,
+    "Claude $1 $2"
+  );
+  s = s.replace(/^gpt[\s_-]*o(\d)/i, "o$1");
+  s = s.replace(/\bflash[\s_-]*lite\b/gi, "Flash-Lite");
+  s = s.replace(/×/g, "x");
+
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+/**
+ * Canonical display name for a model alias.
+ * e.g. "Claude 3.5 Sonnet" → "Claude-3.5-Sonnet",
+ * "Meta-LLaMA-3-8B-Instruct" → "Llama-3-8B-Instruct",
+ * "14B-Phi" / "Phi4-14B" → "Phi-4"
+ */
+export function canonicalizeModelName(name) {
+  let s = String(name ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[^/\s]+\/(?=[A-Za-z0-9])/, "")
+    .replace(/^[(\[]+|[)\]]+$/g, "");
+
+  if (s.includes(":")) {
+    s = s.slice(s.lastIndexOf(":") + 1).replace(/^-+/, "").trim();
+  }
+
+  s = s.replace(/^meta[\s_-]*llms?/i, "Llama");
+  s = s.replace(/^meta[\s_-]*llama/i, "Llama");
+  s = s.replace(/\bLLaMA\b/gi, "Llama");
+  s = s.replace(/\bLLama\b/g, "Llama");
+  s = s.replace(/\bllms?\b/gi, "Llama");
+
+  // Phi product names (before size-first reorder)
+  if (/^phi[-_\s]*4[-_\s]*14\s*[Bb]$/i.test(s) || /^phi[-_\s]*4$/i.test(s)) {
+    return "Phi-4";
+  }
+  if (
+    /^phi[-_\s]*4[-_\s]*mini(?:[-_\s]*\d+(?:\.\d+)?\s*[Bb])?$/i.test(s) ||
+    /^phi[-_\s]*mini[-_\s]*3\.?8\s*[Bb]$/i.test(s) ||
+    /^3\.?8\s*[Bb][-_\s]*phi$/i.test(s)
+  ) {
+    return "Phi-4-Mini";
+  }
+
+  // Size-first → family-first
+  s = s.replace(/^(\d+(?:\.\d+)?\s*[Bb])[-_\s]+(.+)$/, "$2-$1");
+  if (/^phi[-_\s]*14\s*[Bb]$/i.test(s)) return "Phi-4";
+  if (/^phi[-_\s]*3\.?8\s*[Bb]$/i.test(s)) return "Phi-4-Mini";
+
+  if (/^(sonnet|opus|haiku)\b/i.test(s) && !/claude/i.test(s)) {
+    s = `Claude ${s}`;
+  }
+  s = s.replace(
+    /^claude[\s_-]*(sonnet|opus|haiku)[\s_-]*(\d+(?:\.\d+)?)([\s_-]*thinking)?/i,
+    (_, line, ver, thinking) =>
+      `Claude-${ver}-${titleCaseToken(line)}${thinking ? "-Thinking" : ""}`
+  );
+  s = s.replace(
+    /^claude[\s_-]*(\d+(?:\.\d+)?)[\s_-]*(sonnet|opus|haiku)([\s_-]*thinking)?/i,
+    (_, ver, line, thinking) =>
+      `Claude-${ver}-${titleCaseToken(line)}${thinking ? "-Thinking" : ""}`
+  );
+
+  s = s.replace(/^gpt[\s_-]*o(\d(?:-[\w.]+)?)/i, "o$1");
+  s = s.replace(/\bflash[\s_-]*lite\b/gi, "Flash-Lite");
+  s = s.replace(/×/g, "x");
+  // Size / MoE annotations in parentheses → hyphenated suffix
+  s = s.replace(/\s*\(([^)]*)\)\s*/g, (_, inner) => {
+    const cleaned = String(inner).trim().replace(/\s+/g, "-");
+    return cleaned ? `-${cleaned}-` : "-";
+  });
+  s = s.replace(/[()]/g, "");
+  // Collapse separators to hyphens, then tidy
+  s = s
+    .replace(/[\s_/]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  // Normalize casing of hyphenated tokens
+  s = s
+    .split("-")
+    .filter(Boolean)
+    .map((token, index) => {
+      const lower = token.toLowerCase();
+      if (/^\d+(\.\d+)?[bB]$/.test(token)) return token.toUpperCase().replace(/B$/, "B");
+      if (/^\d+(\.\d+)?$/.test(token)) return token;
+      if (/^(mini|nano|pro|flash|lite|instruct|chat|base|preview|thinking|fast|audio|turbo)$/i.test(token)) {
+        return titleCaseToken(token);
+      }
+      if (/^(sonnet|opus|haiku)$/i.test(token)) return titleCaseToken(token);
+      if (lower === "llama") return "Llama";
+      if (lower === "gpt") return "GPT";
+      if (lower === "oss") return "OSS";
+      if (lower === "phi") return "Phi";
+      if (index === 0) return titleCaseToken(token);
+      // Keep mid tokens readable: Qwen2.5 stays as written after first pass
+      if (/[A-Z]/.test(token.slice(1)) && /[a-z]/.test(token)) return token;
+      return titleCaseToken(token);
+    })
+    .join("-");
+
+  // GPT casing: GPT-4o, GPT-4o-mini, GPT-OSS-20B
+  s = s.replace(/^Gpt-/i, "GPT-");
+  s = s.replace(/^Gpt$/i, "GPT");
+  s = s.replace(/\bGpt\b/g, "GPT");
+  // o-series stay lowercase o
+  s = s.replace(/^O(\d)/, "o$1");
+
+  return s;
+}
+
 /** Map a listed model name to its family (GPT-5, Claude, Llama 3.1, …). */
 export function modelFamily(name) {
   const compact = compactModelKey(name);
 
   if (compact.includes("deepseek")) {
-    if (compact.includes("r1")) return "DeepSeek R1";
-    if (compact.includes("v3") || /^deepseek3/.test(compact)) return "DeepSeek V3";
-    if (compact.includes("v2")) return "DeepSeek V2";
-    if (/deepseek4/.test(compact)) return "DeepSeek 4";
     return "DeepSeek";
   }
 
@@ -339,21 +530,11 @@ export function modelFamily(name) {
   }
   if (compact.startsWith("gptoss")) return "GPT-OSS";
   if (compact.startsWith("chatgpt")) return "ChatGPT";
-  if (/^gpto[1-4]/.test(compact)) return `o${compact.match(/^gpto([1-4])/)[1]}`;
-  if (compact.startsWith("gpt5")) return "GPT-5";
-  if (compact.startsWith("gpt4o")) return "GPT-4o";
-  if (compact.startsWith("gpt41")) return "GPT-4.1";
-  if (compact.startsWith("gpt4")) return "GPT-4";
-  if (compact.startsWith("gpt35")) return "GPT-3.5";
+  if (/^gpto[1-4]/.test(compact) || compact.startsWith("o1") || compact.startsWith("o3") || compact.startsWith("o4")) {
+    return "GPT";
+  }
   if (compact.startsWith("gpt")) return "GPT";
-  if (compact.startsWith("o1")) return "o1";
-  if (compact.startsWith("o3")) return "o3";
-  if (compact.startsWith("o4")) return "o4";
 
-  if (compact.startsWith("gemini3")) return "Gemini 3";
-  if (compact.startsWith("gemini25")) return "Gemini 2.5";
-  if (compact.startsWith("gemini2")) return "Gemini 2";
-  if (compact.startsWith("gemini1")) return "Gemini 1.5";
   if (compact.startsWith("learnlm")) return "LearnLM";
   if (compact.startsWith("gemini")) return "Gemini";
   if (compact.startsWith("gemma")) return "Gemma";
@@ -368,31 +549,16 @@ export function modelFamily(name) {
     compact.includes("maverick") ||
     compact.includes("scout")
   ) {
-    if (compact.includes("llama4") || compact.includes("maverick") || compact.includes("scout")) return "Llama 4";
-    if (compact.includes("llama33")) return "Llama 3.3";
-    if (compact.includes("llama32")) return "Llama 3.2";
-    if (compact.includes("llama31")) return "Llama 3.1";
-    if (compact.includes("llama3")) return "Llama 3";
-    if (compact.includes("llama2")) return "Llama 2";
     return "Llama";
   }
 
-  if (compact.startsWith("qwen3") || compact.includes("qwen3")) return "Qwen3";
-  if (compact.startsWith("qwen25")) return "Qwen2.5";
-  if (compact.startsWith("qwen2")) return "Qwen2";
-  if (compact.startsWith("qwen") || /(?:^|\d)qwen/.test(compact)) return "Qwen";
   if (compact.startsWith("qwq")) return "QwQ";
   if (compact.startsWith("qvq")) return "QVQ";
+  if (compact.startsWith("qwen") || /(?:^|\d)qwen/.test(compact)) return "Qwen";
 
-  if (compact.startsWith("grok4")) return "Grok 4";
-  if (compact.startsWith("grok3")) return "Grok 3";
   if (compact.startsWith("grok")) return "Grok";
 
-  if (compact.startsWith("kimi")) {
-    if (compact.includes("k3")) return "Kimi K3";
-    if (compact.includes("k2")) return "Kimi K2";
-    return "Kimi";
-  }
+  if (compact.startsWith("kimi")) return "Kimi";
 
   if (compact.startsWith("glm")) {
     if (compact.startsWith("glm5")) return "GLM 5";
@@ -437,13 +603,78 @@ export function modelFamily(name) {
   return tokens[0];
 }
 
-export function groupModelsByFamily(models, releaseDates) {
+const CLOSED_MODEL_FAMILIES = new Set([
+  "Claude",
+  "ChatGPT",
+  "GPT",
+  "GPT-3.5",
+  "GPT-4",
+  "GPT-4o",
+  "GPT-4.1",
+  "GPT-5",
+  "o1",
+  "o3",
+  "o4",
+  "Gemini",
+  "Gemini 1.5",
+  "Gemini 2",
+  "Gemini 2.5",
+  "Gemini 3",
+  "LearnLM",
+  "Grok",
+  "Grok 3",
+  "Grok 4",
+  // Unverified placeholders still listed as Closed until confirmed:
+  "Fable 5",
+  "Muse",
+  "Nova",
+]);
+
+const OPEN_SOURCE_MODEL_FAMILIES = new Set(["OLMo", "BLOOMZ", "Dolly"]);
+
+/**
+ * Classify a model family as Closed, Open-weight, or Open-source.
+ * Heuristic based on public release status (weights + training-data openness),
+ * not a curated license database. Defaults to Open-weight for unknown families.
+ *
+ * Sources (examples):
+ * - Closed API: OpenAI GPT/o-series, Anthropic Claude, Google Gemini, xAI Grok
+ * - Open-weight: Meta Llama, Qwen, DeepSeek, Mistral, Gemma, GPT-OSS, Kimi K2,
+ *   MiniMax-M1, ERNIE 4.5 open releases, Cohere Aya / Command R-class releases
+ * - Open-source (weights + open training data): AI2 OLMo/Dolma, BigScience BLOOM/ROOTS,
+ *   Databricks Dolly (open instruction data on open Pythia base)
+ */
+export function modelOpenness(familyOrName) {
+  const family = modelFamily(familyOrName);
+  if (OPEN_SOURCE_MODEL_FAMILIES.has(family)) return "Open-source";
+  if (CLOSED_MODEL_FAMILIES.has(family)) return "Closed";
+  return "Open-weight";
+}
+
+/**
+ * Resolve a model's family from models.csv metadata when available,
+ * otherwise fall back to the name heuristic.
+ */
+export function resolveModelFamily(name, modelMeta) {
+  if (name && modelMeta?.size) {
+    const entry =
+      modelMeta.get(name) ??
+      modelMeta.get(name.toLowerCase()) ??
+      modelMeta.get(canonicalizeModelName(name)) ??
+      modelMeta.get(modelIdentityKey(name));
+    const family = entry?.family?.trim();
+    if (family) return family;
+  }
+  return modelFamily(name);
+}
+
+export function groupModelsByFamily(models, releaseDates, modelMeta) {
   const sorted = sortModelsByReleaseDate(models, releaseDates);
   const groups = [];
   const indexByFamily = new Map();
 
   for (const model of sorted) {
-    const family = modelFamily(model);
+    const family = resolveModelFamily(model, modelMeta);
     const existing = indexByFamily.get(family);
     if (existing === undefined) {
       indexByFamily.set(family, groups.length);
@@ -477,13 +708,20 @@ export function sortKeywords(keywords, byKeyword) {
 }
 
 export function sortModelsByReleaseDate(models, releaseDates) {
+  const lookupDate = (name) =>
+    releaseDates.get(name) ??
+    releaseDates.get(name.toLowerCase()) ??
+    releaseDates.get(canonicalizeModelName(name)) ??
+    releaseDates.get(modelIdentityKey(name)) ??
+    "";
+
   return [...models].sort((a, b) => {
-    const dateA = releaseDates.get(a) ?? releaseDates.get(a.toLowerCase()) ?? "";
-    const dateB = releaseDates.get(b) ?? releaseDates.get(b.toLowerCase()) ?? "";
+    const dateA = lookupDate(a);
+    const dateB = lookupDate(b);
     if (dateA && dateB) return dateB.localeCompare(dateA);
     if (dateA) return -1;
     if (dateB) return 1;
-    return a.localeCompare(b);
+    return canonicalizeModelName(a).localeCompare(canonicalizeModelName(b));
   });
 }
 

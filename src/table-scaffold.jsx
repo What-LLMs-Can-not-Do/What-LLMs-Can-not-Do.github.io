@@ -16,10 +16,13 @@ import {
   parseAudioCell,
   groupKeywordsByCategory,
   parseKeywords,
+  parseModelsCsv,
   parseReleaseDates,
   parseTableCsv,
   groupModelsByFamily,
-  modelFamily,
+  resolveModelFamily,
+  modelIdentityKey,
+  canonicalizeModelName,
   sortKeywords,
   splitKeywords,
   splitModels,
@@ -68,11 +71,28 @@ const MEDIUM_NARROW_COLUMNS = new Set(["Keywords"]);
 
 const REDUCED_COLUMNS = new Set(["Paper title"]);
 
-const WHO_IS_BETTER_STYLES = {
+const OPENNESS_BADGE_STYLES = {
+  Closed: { background: "#fde68a", color: "#92400e", border: "#fbbf24" },
+  "Open-weight": { background: "#ddd6fe", color: "#5b21b6", border: "#a78bfa" },
+  "Open-source": { background: "#99f6e4", color: "#115e59", border: "#2dd4bf" },
+};
+
+const WHO_IS_BETTER_BADGE_STYLES = {
   humans: { background: "#dcfce7", color: "#166534", border: "#bbf7d0" },
   llms: { background: "#dbeafe", color: "#1e40af", border: "#bfdbfe" },
   neutral: { background: "#f1f5f9", color: "#64748b", border: "#e2e8f0" },
 };
+
+function whoIsBetterBadgeStyle(value) {
+  const normalized = value?.trim();
+  if (!normalized) return null;
+  if (normalized === "LLMs") return WHO_IS_BETTER_BADGE_STYLES.llms;
+  if (normalized === "Not tested") return WHO_IS_BETTER_BADGE_STYLES.neutral;
+  if (normalized === "Humans" || normalized.startsWith("Humans")) {
+    return WHO_IS_BETTER_BADGE_STYLES.humans;
+  }
+  return WHO_IS_BETTER_BADGE_STYLES.neutral;
+}
 
 function linkHostname(url) {
   try {
@@ -262,19 +282,8 @@ function formatCellValue(value) {
   return value;
 }
 
-function whoIsBetterStyle(value) {
-  const normalized = value?.trim();
-  if (!normalized) return null;
-  if (normalized === "LLMs") return WHO_IS_BETTER_STYLES.llms;
-  if (normalized === "Not tested") return WHO_IS_BETTER_STYLES.neutral;
-  if (normalized === "Humans" || normalized.startsWith("Humans")) {
-    return WHO_IS_BETTER_STYLES.humans;
-  }
-  return WHO_IS_BETTER_STYLES.neutral;
-}
-
 function WhoIsBetterCell({ value }) {
-  const style = whoIsBetterStyle(value);
+  const style = whoIsBetterBadgeStyle(value);
   if (!style) return null;
 
   return (
@@ -302,50 +311,133 @@ function formatHumanBenchmark(value) {
   return value;
 }
 
-function ModelsCell({ value, expanded, releaseDates }) {
+function lookupModelMeta(name, modelMeta) {
+  if (!name || !modelMeta?.size) return null;
+  return (
+    modelMeta.get(name) ??
+    modelMeta.get(name.toLowerCase()) ??
+    modelMeta.get(canonicalizeModelName(name)) ??
+    modelMeta.get(modelIdentityKey(name)) ??
+    null
+  );
+}
+
+function resolveModelHref(name, modelMeta) {
+  const link = lookupModelMeta(name, modelMeta)?.link?.trim();
+  if (!link) return null;
+  if (/^https?:\/\//i.test(link)) return link;
+  return `https://huggingface.co/${link}`;
+}
+
+/** Openness from models.csv for a model or family (variants first, then family name). */
+function resolveModelOpenness(family, variants, modelMeta) {
+  for (const name of [...(variants ?? []), family].filter(Boolean)) {
+    const openness = lookupModelMeta(name, modelMeta)?.openness?.trim();
+    if (openness) return openness;
+  }
+  return "";
+}
+
+function ModelsCell({ value, expanded, releaseDates, modelMeta }) {
   const [hovered, setHovered] = useState(null);
-  const families = groupModelsByFamily(splitModels(value), releaseDates);
+  const hideTimerRef = useRef(null);
+  const families = groupModelsByFamily(splitModels(value), releaseDates, modelMeta);
   if (families.length === 0) return null;
+
+  const clearHideTimer = () => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+  };
+
+  const scheduleHide = () => {
+    clearHideTimer();
+    hideTimerRef.current = setTimeout(() => setHovered(null), 160);
+  };
 
   const visible = expanded ? families : families.slice(0, PREVIEW_COUNT);
   const remaining = families.length - visible.length;
 
   return (
     <div className={BADGE_WRAP}>
-      {visible.map(({ family, variants }) => (
-        <span
-          key={family}
-          className={`${BADGE_CLASS} cursor-default border-slate-200 bg-white/70 text-slate-700`}
-          onClick={(event) => event.stopPropagation()}
-          onMouseEnter={(event) => {
-            const rect = event.currentTarget.getBoundingClientRect();
-            setHovered({
-              family,
-              variants,
-              x: rect.left,
-              y: rect.bottom,
-            });
-          }}
-          onMouseLeave={() => setHovered(null)}
-        >
-          {family}
-          {variants.length > 1 ? (
-            <span className="ml-0.5 text-[10px] font-semibold text-slate-400">
-              {variants.length}
-            </span>
-          ) : null}
-        </span>
-      ))}
+      {visible.map(({ family, variants }) => {
+        const openness = resolveModelOpenness(family, variants, modelMeta);
+        const badge =
+          OPENNESS_BADGE_STYLES[openness] ?? {
+            background: "#f1f5f9",
+            color: "#475569",
+            border: "#e2e8f0",
+          };
+        return (
+          <span
+            key={family}
+            className={`${BADGE_CLASS} cursor-default`}
+            style={{
+              backgroundColor: badge.background,
+              color: badge.color,
+              borderColor: badge.border,
+            }}
+            title={openness ? `${openness} model family` : "model family"}
+            onClick={(event) => event.stopPropagation()}
+            onMouseEnter={(event) => {
+              clearHideTimer();
+              const rect = event.currentTarget.getBoundingClientRect();
+              setHovered({
+                family,
+                variants,
+                openness,
+                x: rect.left,
+                y: rect.bottom,
+              });
+            }}
+            onMouseLeave={scheduleHide}
+          >
+            {family}
+            {variants.length > 1 ? (
+              <span className="ml-0.5 text-[10px] font-semibold opacity-70">
+                {variants.length}
+              </span>
+            ) : null}
+          </span>
+        );
+      })}
       {remaining > 0 ? (
         <span className="text-xs text-slate-500">+{remaining}</span>
       ) : null}
       {hovered
         ? createPortal(
             <div
-              className="pointer-events-none fixed z-[80] max-w-xs rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs leading-relaxed text-slate-600 shadow-lg"
+              className="fixed z-[80] max-w-xs rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs leading-relaxed text-slate-600 shadow-lg"
               style={{ left: hovered.x, top: hovered.y + 6 }}
+              onMouseEnter={clearHideTimer}
+              onMouseLeave={scheduleHide}
+              onClick={(event) => event.stopPropagation()}
             >
-              {hovered.variants.join(", ")}
+              <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+                {hovered.openness}
+              </div>
+              <ul className="space-y-0.5">
+                {hovered.variants.map((variant) => {
+                  const href = resolveModelHref(variant, modelMeta);
+                  return (
+                    <li key={variant}>
+                      {href ? (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sky-700 underline-offset-2 hover:underline"
+                        >
+                          {variant}
+                        </a>
+                      ) : (
+                        <span>{variant}</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
             </div>,
             document.body
           )
@@ -804,11 +896,11 @@ function rowHasLanguage(row, language) {
   );
 }
 
-function rowHasModel(row, model) {
+function rowHasModel(row, model, modelMeta) {
   const needle = model.toLowerCase();
   return splitModels(row["Model(s) tested"]).some((item) => {
     if (item.toLowerCase() === needle) return true;
-    return modelFamily(item).toLowerCase() === needle;
+    return resolveModelFamily(item, modelMeta).toLowerCase() === needle;
   });
 }
 
@@ -820,7 +912,7 @@ function rowHasCategory(row, category) {
   return (row["General category"] ?? "").trim().toLowerCase() === category.toLowerCase();
 }
 
-function leafColumn(header, { releaseDates, keywordCategories }) {
+function leafColumn(header, { releaseDates, modelMeta, keywordCategories }) {
   let displayHeader = header.startsWith("Open-source") ? "Open-source" : header;
   if (header === "Year of publication") {
     displayHeader = "Year";
@@ -843,7 +935,10 @@ function leafColumn(header, { releaseDates, keywordCategories }) {
       ? {
           accessorFn: (row) => {
             const models = splitModels(row["Model(s) tested"]);
-            return [...models, ...models.map(modelFamily)].join(" ");
+            return [
+              ...models,
+              ...models.map((model) => resolveModelFamily(model, modelMeta)),
+            ].join(" ");
           },
         }
       : {}),
@@ -855,6 +950,7 @@ function leafColumn(header, { releaseDates, keywordCategories }) {
             value={row.original["Model(s) tested"]}
             expanded={row.getIsExpanded()}
             releaseDates={releaseDates}
+            modelMeta={modelMeta}
           />
         );
       }
@@ -974,7 +1070,7 @@ function expandedFields(row) {
   return fields;
 }
 
-function ExpandedRowDetail({ row, releaseDates }) {
+function ExpandedRowDetail({ row, releaseDates, modelMeta }) {
   const benchmark = expandedBenchmarkField(row);
   const models = row["Model(s) tested"]?.trim();
   const abstract = row.Abstract?.trim();
@@ -992,7 +1088,12 @@ function ExpandedRowDetail({ row, releaseDates }) {
           {models && (
             <div>
               <div className="font-medium text-gray-700 mb-1">Model(s) tested</div>
-              <ModelsCell value={models} expanded releaseDates={releaseDates} />
+              <ModelsCell
+                value={models}
+                expanded
+                releaseDates={releaseDates}
+                modelMeta={modelMeta}
+              />
             </div>
           )}
         </div>
@@ -1025,13 +1126,43 @@ function ExampleAudioPlayers({ files, placement = "above", inline = false }) {
   );
 }
 
+function countTextLines(text) {
+  if (!text?.trim()) return 0;
+  return text.replace(/\r\n/g, "\n").split("\n").length;
+}
+
+function ScrollableExampleText({ text, children, className = "" }) {
+  const needsScroll = countTextLines(text) > 8;
+  if (!needsScroll) {
+    return <div className={className}>{children}</div>;
+  }
+
+  return (
+    <div
+      className="languages-scroll relative max-w-full overflow-hidden rounded-lg bg-white/35 backdrop-blur-[2px]"
+      onClick={(event) => event.stopPropagation()}
+      onWheel={(event) => event.stopPropagation()}
+    >
+      <div
+        className={`languages-scroll-body max-h-48 overflow-y-auto px-2.5 py-2 ${className}`}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function BenchmarkExampleContent({ text, audio = {} }) {
   const { files = [], placement = "above", segments = null } = audio;
   const textClass = "whitespace-pre-wrap break-words [overflow-wrap:anywhere]";
 
   if (placement === "inline" && segments?.length) {
+    const inlineText = segments
+      .filter((segment) => segment.type === "text")
+      .map((segment) => segment.content)
+      .join("");
     return (
-      <div className={textClass}>
+      <ScrollableExampleText text={inlineText || text} className={textClass}>
         {segments.map((segment, index) =>
           segment.type === "text" ? (
             <span key={index}>{segment.content}</span>
@@ -1043,14 +1174,18 @@ function BenchmarkExampleContent({ text, audio = {} }) {
             />
           ),
         )}
-      </div>
+      </ScrollableExampleText>
     );
   }
 
   const players = files.length ? (
     <ExampleAudioPlayers files={files} placement={placement} />
   ) : null;
-  const body = text?.trim() ? <div className={textClass}>{text}</div> : null;
+  const body = text?.trim() ? (
+    <ScrollableExampleText text={text} className={textClass}>
+      {text}
+    </ScrollableExampleText>
+  ) : null;
 
   if (placement === "below") {
     return (
@@ -1072,6 +1207,7 @@ function BenchmarkExampleContent({ text, audio = {} }) {
 export default function Table() {
   const [data, setData] = useState([]);
   const [releaseDates, setReleaseDates] = useState(() => new Map());
+  const [modelMeta, setModelMeta] = useState(() => new Map());
   const [keywordCategories, setKeywordCategories] = useState(() => new Map());
   const [keywordList, setKeywordList] = useState([]);
   const [selectedKeywords, setSelectedKeywords] = useState(() => new Set());
@@ -1095,8 +1231,8 @@ export default function Table() {
         if (!response.ok) throw new Error(`Failed to load data.csv (${response.status})`);
         return response.text();
       }),
-      fetch(asset("model_release_dates.csv")).then((response) => {
-        if (!response.ok) throw new Error(`Failed to load model_release_dates.csv (${response.status})`);
+      fetch(asset("models.csv")).then((response) => {
+        if (!response.ok) throw new Error(`Failed to load models.csv (${response.status})`);
         return response.text();
       }),
       fetch(asset("keywords.csv")).then((response) => {
@@ -1104,10 +1240,12 @@ export default function Table() {
         return response.text();
       }),
     ])
-      .then(([tableText, datesText, keywordsText]) => {
+      .then(([tableText, modelsText, keywordsText]) => {
         const rows = parseTableCsv(tableText);
         const { byKeyword, list } = parseKeywords(keywordsText);
-        setReleaseDates(parseReleaseDates(datesText));
+        const meta = parseModelsCsv(modelsText);
+        setModelMeta(meta);
+        setReleaseDates(parseReleaseDates(modelsText));
         setKeywordCategories(byKeyword);
         setKeywordList(list);
         setData(rows);
@@ -1130,11 +1268,11 @@ export default function Table() {
     for (const row of data) {
       for (const model of splitModels(row["Model(s) tested"])) {
         values.push(model);
-        values.push(modelFamily(model));
+        values.push(resolveModelFamily(model, modelMeta));
       }
     }
     return uniqueSorted(values);
-  }, [data]);
+  }, [data, modelMeta]);
 
   const licenseOptions = useMemo(() => {
     const values = [];
@@ -1194,7 +1332,7 @@ export default function Table() {
       }
       if (
         selectedModels.size > 0 &&
-        ![...selectedModels].every((model) => rowHasModel(row, model))
+        ![...selectedModels].every((model) => rowHasModel(row, model, modelMeta))
       ) {
         return false;
       }
@@ -1213,15 +1351,17 @@ export default function Table() {
     selectedLanguages,
     selectedModels,
     selectedLicenses,
+    modelMeta,
   ]);
 
   const columns = useMemo(
     () =>
       buildColumns(data[0] ? displayHeaders(Object.keys(data[0])) : [], {
         releaseDates,
+        modelMeta,
         keywordCategories,
       }),
-    [data, releaseDates, keywordCategories]
+    [data, releaseDates, modelMeta, keywordCategories]
   );
 
   const toggleKeyword = (keyword) => {
@@ -1421,12 +1561,13 @@ export default function Table() {
                       row.getIsExpanded() ? "border-b-0" : "border-b"
                     } ${canExpand ? "cursor-pointer" : ""}`}
                   >
-                    {row.getVisibleCells().map((cell) => (
+                    {row.getVisibleCells().map((cell) => {
+                      const isWhoCol = isWhoIsBetterColumn(cell.column.id);
+                      return (
                       <td
                         key={cell.id}
                         className={`py-2.5 align-top text-gray-700 bg-transparent ${
-                          WHO_IS_BETTER_LEAF_COLUMNS.has(cell.column.id) ||
-                          cell.column.id.startsWith("Open-source")
+                          isWhoCol
                             ? "text-center"
                             : "px-3 whitespace-pre-wrap"
                         } ${columnWidthClass(cell.column.id)}`}
@@ -1438,7 +1579,8 @@ export default function Table() {
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
-                    ))}
+                      );
+                    })}
                   </tr>
                   {row.getIsExpanded() && (
                     <tr
@@ -1450,7 +1592,11 @@ export default function Table() {
                           className="sticky left-0 box-border px-4 py-3 text-gray-600"
                           style={{ width: panelWidth || "100%" }}
                         >
-                          <ExpandedRowDetail row={row.original} releaseDates={releaseDates} />
+                          <ExpandedRowDetail
+                            row={row.original}
+                            releaseDates={releaseDates}
+                            modelMeta={modelMeta}
+                          />
                         </div>
                       </td>
                     </tr>

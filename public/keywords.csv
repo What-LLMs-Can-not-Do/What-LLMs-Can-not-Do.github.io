@@ -1,6 +1,11 @@
 Category,Keyword
 Modality,Text
 Modality,Speech
+Attribute,Bias
+Attribute,Causality
+Attribute,Creativity
+Attribute,Ethics
+Attribute,Logic
 Attribute,Multilinguality
 Attribute,Reasoning
 Attribute,Robustness
@@ -10,7 +15,9 @@ Domain,Chemistry
 Domain,Classics
 Domain,Computer Science
 Domain,Culture
+Domain,Disability
 Domain,Economics
+Domain,Education
 Domain,Engineering
 Domain,Finance
 Domain,Geography
@@ -20,8 +27,11 @@ Domain,Math
 Domain,Medical
 Domain,Philosophy
 Domain,Physics
+Domain,Poetry
+Domain,Politics
 Domain,Psychology
 Domain,Science
+Domain,Toxicity
 Format,Long-context
 Format,Minimal pairs
 Format,Open-ended
@@ -31,12 +41,13 @@ Format,Similarity judgments
 Format,Triplet comparison
 Language,Code-switching
 Language,Lexicon
-Language,Grammar 
+Language,Grammar
 Language,Syntax
 Language,Morphology
 Language,Orthography
 Language,Pragmatics
 Language,Semantics
+Language,Discourse
 Language,Phonetics
 Language,Phonology
 Language,Prosody
@@ -47,3 +58,6 @@ Task,NLI
 Task,Summarization
 Task,Classification
 Task,Data Annotation
+Task,Content moderation
+Task,Simulation of users
+Task,Stance
