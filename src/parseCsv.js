@@ -57,7 +57,6 @@ const EXCLUDED_COLUMNS = new Set([
 ]);
 
 const HIDDEN_COLUMNS = new Set([
-  "ID",
   "Abstract",
   "Benchmark Example",
   "Benchmark Audio",
@@ -194,7 +193,12 @@ export function parseTableCsv(text) {
     if (start < text.length && text[start] === "\n") start++;
   }
 
-  return parseCsv(text.slice(start)).filter((row) => row["Paper title"]?.trim());
+  const rows = parseCsv(text.slice(start)).filter((row) => row["Paper title"]?.trim());
+  // ID is not stored in data.csv; assign stable 1-based IDs by file order.
+  return rows.map((row, index) => {
+    const { ID: _ignored, ...rest } = row;
+    return { ID: String(index + 1), ...rest };
+  });
 }
 
 export function findTableRowById(rows, id) {

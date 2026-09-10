@@ -108,13 +108,30 @@ def update_csv_row(csv_path: pathlib.Path, row_id: str, data: dict) -> str:
     rows = list(reader)
     found = False
     updated_rows: list[dict[str, str]] = []
-    for row in rows:
-        if (row.get("ID") or "").strip() == row_id:
-            field_map = field_map_from_data(data, row_id)
-            updated_rows.append({col: field_map.get(col, row.get(col, "")) for col in header})
-            found = True
-        else:
-            updated_rows.append(row)
+
+    if "ID" not in header:
+        # IDs are generated in the UI as 1-based file order; match that here.
+        try:
+            idx = int(row_id) - 1
+        except ValueError as exc:
+            raise ValueError(f"Invalid row ID {row_id}") from exc
+        if idx < 0 or idx >= len(rows):
+            raise ValueError(f"No row with ID {row_id}")
+        field_map = field_map_from_data(data, "")
+        for i, row in enumerate(rows):
+            if i == idx:
+                updated_rows.append({col: field_map.get(col, row.get(col, "")) for col in header})
+            else:
+                updated_rows.append(row)
+        found = True
+    else:
+        for row in rows:
+            if (row.get("ID") or "").strip() == row_id:
+                field_map = field_map_from_data(data, row_id)
+                updated_rows.append({col: field_map.get(col, row.get(col, "")) for col in header})
+                found = True
+            else:
+                updated_rows.append(row)
 
     if not found:
         raise ValueError(f"No row with ID {row_id}")

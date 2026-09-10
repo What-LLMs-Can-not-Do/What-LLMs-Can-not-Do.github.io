@@ -451,7 +451,7 @@ export default function Contribute() {
             </div>
 
             {mode === "change" && (
-              <Field label="Entry ID" hint="Table row ID from the first column of the table.">
+              <Field label="Entry ID" hint="Row number shown in the table ID column (1, 2, 3, … in file order).">
                 <input
                   required
                   inputMode="numeric"
