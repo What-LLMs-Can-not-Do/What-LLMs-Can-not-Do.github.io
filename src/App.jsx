@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import Analytics from "./Analytics.jsx";
 import Contribute from "./Contribute.jsx";
 import Home from "./Home.jsx";
 import NavBar from "./NavBar.jsx";
@@ -9,6 +10,7 @@ const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
 function App() {
   return (
     <BrowserRouter basename={basename}>
+      <Analytics />
       <NavBar />
       <Routes>
         <Route path="/" element={<Home />} />
