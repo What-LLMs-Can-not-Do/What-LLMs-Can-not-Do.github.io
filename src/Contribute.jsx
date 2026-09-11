@@ -3,10 +3,16 @@ import { CONTRIBUTION_LABEL, GITHUB_REPO } from "./config.js";
 import {
   findTableRowById,
   groupKeywordsByCategory,
+  KEYWORD_CATEGORY_ORDER,
+  modelIdentityKey,
+  canonicalizeModelName,
   parseKeywords,
+  parseModelsCsv,
+  parseCsv,
   parseTableCsv,
   sortKeywords,
   splitKeywords,
+  splitModels,
   tableRowToContributionForm,
 } from "./parseCsv.js";
 
@@ -20,11 +26,25 @@ const CATEGORIES = [
 
 const HUMAN_BENCHMARK_OPTIONS = ["yes", "no"];
 
+const MODEL_OPENNESS_OPTIONS = ["Closed", "Open-weight", "Open-source"];
+
 const WHO_IS_BETTER_OPTIONS = [
   "Not tested",
   "LLMs",
   "Humans",
   "Humans (trivial)",
+];
+
+const LICENSE_OPTIONS = [
+  "None listed",
+  "MIT",
+  "Apache-2.0",
+  "CC BY 4.0",
+  "CC BY-SA 4.0",
+  "CC BY-SA 3.0",
+  "CC BY-NC 4.0",
+  "CC BY-NC-SA 4.0",
+  "CC BY-NC-ND 4.0",
 ];
 
 const KEYWORD_STYLES = {
@@ -57,16 +77,17 @@ function Field({ label, hint, children, className = "" }) {
   );
 }
 
-function WhoIsBetterInput({ value, onChange, listId, options }) {
+function ComboboxInput({ value, onChange, listId, options, filterValue, applyOption }) {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const rootRef = useRef(null);
+  const querySource = filterValue ? filterValue(value) : value;
 
   const filteredOptions = useMemo(() => {
-    const query = value.trim().toLowerCase();
+    const query = querySource.trim().toLowerCase();
     if (!query) return options;
     return options.filter((option) => option.toLowerCase().includes(query));
-  }, [value, options]);
+  }, [querySource, options]);
 
   useEffect(() => {
     const onPointerDown = (event) => {
@@ -78,10 +99,11 @@ function WhoIsBetterInput({ value, onChange, listId, options }) {
 
   useEffect(() => {
     setActiveIndex(0);
-  }, [value, open]);
+  }, [querySource, open]);
 
   const selectOption = (option) => {
-    onChange({ target: { value: option } });
+    const nextValue = applyOption ? applyOption(value, option) : option;
+    onChange({ target: { value: nextValue } });
     setOpen(false);
   };
 
@@ -154,6 +176,51 @@ function WhoIsBetterInput({ value, onChange, listId, options }) {
   );
 }
 
+function currentCommaDraft(value) {
+  const parts = String(value ?? "").split(",");
+  return parts[parts.length - 1] ?? "";
+}
+
+function CommaSeparatedCombobox({ value, onChange, options, listId, splitValue = splitKeywords }) {
+  const selected = useMemo(() => splitValue(value), [value, splitValue]);
+  const draft = currentCommaDraft(value).trim().toLowerCase();
+
+  const filteredOptions = useMemo(() => {
+    return options.filter((option) => {
+      const lower = option.toLowerCase();
+      if (selected.some((item) => item.toLowerCase() === lower) && lower !== draft) {
+        return false;
+      }
+      if (!draft) return true;
+      return lower.includes(draft);
+    });
+  }, [options, selected, draft]);
+
+  return (
+    <ComboboxInput
+      value={value}
+      onChange={onChange}
+      listId={listId}
+      options={filteredOptions}
+      filterValue={() => ""}
+      applyOption={(current, option) => {
+        const parts = String(current ?? "").split(",");
+        const completed = [
+          ...parts.slice(0, -1).map((part) => part.trim()).filter(Boolean),
+          option,
+        ];
+        return completed.join(", ");
+      }}
+    />
+  );
+}
+
+function WhoIsBetterInput({ value, onChange, listId, options }) {
+  return (
+    <ComboboxInput value={value} onChange={onChange} listId={listId} options={options} />
+  );
+}
+
 function formatKeywordList(keywords) {
   return keywords.join(", ");
 }
@@ -163,11 +230,40 @@ function hasKeyword(selected, keyword) {
   return selected.some((item) => item.toLowerCase() === lower);
 }
 
-function buildIssueContent(form, { mode = "addition", entryId = "" } = {}) {
+function lookupModelMeta(name, modelMeta) {
+  if (!name || !modelMeta?.size) return null;
+  return (
+    modelMeta.get(name) ??
+    modelMeta.get(name.toLowerCase()) ??
+    modelMeta.get(canonicalizeModelName(name)) ??
+    modelMeta.get(modelIdentityKey(name)) ??
+    null
+  );
+}
+
+function emptyNewModelDetails() {
+  return { family: "", openness: "", release_date: "", link: "" };
+}
+
+function emptyNewKeywordDetails() {
+  return { category: "" };
+}
+
+function buildIssueContent(
+  form,
+  { mode = "addition", entryId = "", newModels = [], newKeywords = [] } = {}
+) {
   const payload =
     mode === "change"
       ? { contribution_type: "change", ID: entryId.trim(), ...form }
       : { contribution_type: "addition", ...form };
+
+  if (newModels.length > 0) {
+    payload.new_models = newModels;
+  }
+  if (newKeywords.length > 0) {
+    payload.new_keywords = newKeywords;
+  }
 
   const paperTitle = form["Paper title"] || "Untitled";
   const title =
@@ -191,6 +287,12 @@ function buildIssueContent(form, { mode = "addition", entryId = "" } = {}) {
     `**Paper link:** ${form["Paper Link"]}`,
     form["Dataset Link"] ? `**Dataset link:** ${form["Dataset Link"]}` : null,
     form["Other Links"] ? `**Other links:** ${form["Other Links"]}` : null,
+    newModels.length > 0
+      ? `**New models:** ${newModels.map((item) => item.model).join(", ")}`
+      : null,
+    newKeywords.length > 0
+      ? `**New keywords:** ${newKeywords.map((item) => item.keyword).join(", ")}`
+      : null,
     "",
     "```json",
     JSON.stringify(payload, null, 2),
@@ -243,11 +345,95 @@ export default function Contribute() {
   const [keywordList, setKeywordList] = useState([]);
   const [keywordCategories, setKeywordCategories] = useState(() => new Map());
   const [tableRows, setTableRows] = useState([]);
+  const [modelMeta, setModelMeta] = useState(() => new Map());
+  const [knownModelNames, setKnownModelNames] = useState([]);
+  const [newModelDetails, setNewModelDetails] = useState(() => ({}));
+  const [newKeywordDetails, setNewKeywordDetails] = useState(() => ({}));
 
   const selectedKeywords = useMemo(
     () => sortKeywords(splitKeywords(form.Keywords), keywordCategories),
     [form.Keywords, keywordCategories]
   );
+
+  const knownKeywordNames = useMemo(
+    () => keywordList.map(({ keyword }) => keyword),
+    [keywordList]
+  );
+
+  const licenseOptions = useMemo(() => {
+    const seen = new Set(LICENSE_OPTIONS.map((item) => item.toLowerCase()));
+    const extras = [];
+    for (const row of tableRows) {
+      const license = row.License?.trim();
+      if (!license) continue;
+      const key = license.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      extras.push(license);
+    }
+    extras.sort((a, b) => a.localeCompare(b));
+    return [...LICENSE_OPTIONS, ...extras];
+  }, [tableRows]);
+
+  const knownFamilies = useMemo(() => {
+    const families = new Set();
+    for (const entry of modelMeta.values()) {
+      if (entry?.family) families.add(entry.family);
+    }
+    return [...families].sort((a, b) => a.localeCompare(b));
+  }, [modelMeta]);
+
+  const unknownModels = useMemo(() => {
+    return splitModels(form["Model(s) tested"]).filter(
+      (model) => !lookupModelMeta(model, modelMeta)
+    );
+  }, [form["Model(s) tested"], modelMeta]);
+
+  const unknownKeywords = useMemo(() => {
+    return splitKeywords(form.Keywords).filter((keyword) => {
+      return !(
+        keywordCategories.has(keyword) || keywordCategories.has(keyword.toLowerCase())
+      );
+    });
+  }, [form.Keywords, keywordCategories]);
+
+  useEffect(() => {
+    setNewModelDetails((prev) => {
+      const next = {};
+      let changed = Object.keys(prev).length !== unknownModels.length;
+      for (const model of unknownModels) {
+        if (prev[model]) {
+          next[model] = prev[model];
+        } else {
+          next[model] = emptyNewModelDetails();
+          changed = true;
+        }
+      }
+      for (const key of Object.keys(prev)) {
+        if (!(key in next)) changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [unknownModels]);
+
+  useEffect(() => {
+    setNewKeywordDetails((prev) => {
+      const next = {};
+      let changed = Object.keys(prev).length !== unknownKeywords.length;
+      for (const keyword of unknownKeywords) {
+        if (prev[keyword]) {
+          next[keyword] = prev[keyword];
+        } else {
+          next[keyword] = emptyNewKeywordDetails();
+          changed = true;
+        }
+      }
+      for (const key of Object.keys(prev)) {
+        if (!(key in next)) changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [unknownKeywords]);
 
   useEffect(() => {
     const asset = (path) => `${import.meta.env.BASE_URL}${path}`;
@@ -273,6 +459,24 @@ export default function Contribute() {
       })
       .then((text) => setTableRows(parseTableCsv(text)))
       .catch(() => setTableRows([]));
+
+    fetch(asset("models.csv"))
+      .then((response) => {
+        if (!response.ok) throw new Error(`Failed to load models.csv (${response.status})`);
+        return response.text();
+      })
+      .then((text) => {
+        setModelMeta(parseModelsCsv(text));
+        const delimiter = text.includes("\t") ? "\t" : ",";
+        const names = parseCsv(text, delimiter)
+          .map((row) => row.model?.trim())
+          .filter(Boolean);
+        setKnownModelNames([...new Set(names)].sort((a, b) => a.localeCompare(b)));
+      })
+      .catch(() => {
+        setModelMeta(new Map());
+        setKnownModelNames([]);
+      });
   }, []);
 
   useEffect(() => {
@@ -304,12 +508,36 @@ export default function Contribute() {
     setMode(nextMode);
     setEntryId("");
     setForm(initialForm);
+    setNewModelDetails({});
+    setNewKeywordDetails({});
     setEntryLoadError("");
     setError("");
   };
 
   const update = (key) => (event) => {
     setForm((prev) => ({ ...prev, [key]: event.target.value }));
+  };
+
+  const updateNewModel = (model, key) => (event) => {
+    const value = event.target.value;
+    setNewModelDetails((prev) => ({
+      ...prev,
+      [model]: {
+        ...(prev[model] ?? emptyNewModelDetails()),
+        [key]: value,
+      },
+    }));
+  };
+
+  const updateNewKeyword = (keyword, key) => (event) => {
+    const value = event.target.value;
+    setNewKeywordDetails((prev) => ({
+      ...prev,
+      [keyword]: {
+        ...(prev[keyword] ?? emptyNewKeywordDetails()),
+        [key]: value,
+      },
+    }));
   };
 
   const toggleKeyword = (keyword) => {
@@ -342,7 +570,51 @@ export default function Contribute() {
       }
     }
 
-    const { title, body } = buildIssueContent(form, { mode, entryId });
+    for (const model of unknownModels) {
+      const details = newModelDetails[model] ?? emptyNewModelDetails();
+      if (!details.openness.trim()) {
+        setError(`Choose openness for new model “${model}”.`);
+        return;
+      }
+      if (!details.family.trim()) {
+        setError(`Enter a family for new model “${model}”.`);
+        return;
+      }
+    }
+
+    for (const keyword of unknownKeywords) {
+      const details = newKeywordDetails[keyword] ?? emptyNewKeywordDetails();
+      if (!details.category.trim()) {
+        setError(`Choose a category for new keyword “${keyword}”.`);
+        return;
+      }
+    }
+
+    const newModels = unknownModels.map((model) => {
+      const details = newModelDetails[model] ?? emptyNewModelDetails();
+      return {
+        model,
+        family: details.family.trim(),
+        openness: details.openness.trim(),
+        release_date: details.release_date.trim(),
+        link: details.link.trim(),
+      };
+    });
+
+    const newKeywords = unknownKeywords.map((keyword) => {
+      const details = newKeywordDetails[keyword] ?? emptyNewKeywordDetails();
+      return {
+        keyword,
+        category: details.category.trim(),
+      };
+    });
+
+    const { title, body } = buildIssueContent(form, {
+      mode,
+      entryId,
+      newModels,
+      newKeywords,
+    });
     let url = buildIssueUrl(title, body);
 
     if (url.length > MAX_ISSUE_URL_LENGTH) {
@@ -372,6 +644,8 @@ export default function Contribute() {
     setMode("addition");
     setEntryId("");
     setForm(initialForm);
+    setNewModelDetails({});
+    setNewKeywordDetails({});
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
@@ -541,11 +815,11 @@ export default function Contribute() {
                 label="License"
                 hint='Dataset license if it exists; otherwise put "None listed".'
               >
-                <input
+                <ComboboxInput
                   value={form.License}
                   onChange={update("License")}
-                  placeholder="MIT, Apache-2.0, …"
-                  className={FIELD_CLASS}
+                  listId="license-options"
+                  options={licenseOptions}
                 />
               </Field>
             </div>
@@ -589,13 +863,50 @@ export default function Contribute() {
                   );
                 })}
               </div>
-              <input
+              <CommaSeparatedCombobox
                 value={form.Keywords}
                 onChange={update("Keywords")}
-                placeholder="Selected keywords appear here; you can also type extras"
-                className={FIELD_CLASS}
-                aria-label="Keywords"
+                options={knownKeywordNames}
+                listId="keywords-options"
+                splitValue={splitKeywords}
               />
+              {unknownKeywords.length > 0 ? (
+                <div className="mt-3 space-y-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                  <p className="text-sm font-medium text-amber-950">New keyword details</p>
+                  <p className="text-xs text-amber-900/80">
+                    These keywords are not in <code className="text-[11px]">keywords.csv</code>{" "}
+                    yet. Choose a category for each.
+                  </p>
+                  {unknownKeywords.map((keyword) => {
+                    const details = newKeywordDetails[keyword] ?? emptyNewKeywordDetails();
+                    return (
+                      <div
+                        key={keyword}
+                        className="grid gap-3 rounded-md border border-amber-100 bg-white p-3 sm:grid-cols-[1fr_12rem] sm:items-end"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">{keyword}</p>
+                        </div>
+                        <Field label="Category">
+                          <select
+                            value={details.category}
+                            onChange={updateNewKeyword(keyword, "category")}
+                            className={FIELD_CLASS}
+                            required
+                          >
+                            <option value="">Select</option>
+                            {KEYWORD_CATEGORY_ORDER.map((category) => (
+                              <option key={category} value={category}>
+                                {category}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
             </div>
             <Field
               label="Summary"
@@ -645,13 +956,100 @@ export default function Contribute() {
                 className={FIELD_CLASS}
               />
             </Field>
-            <Field label="Model(s) tested" hint="Comma-separated">
-              <input
+            <Field
+              label="Model(s) tested"
+              hint="Comma-separated. For models not already in the catalog, fill in the details below."
+            >
+              <CommaSeparatedCombobox
                 value={form["Model(s) tested"]}
                 onChange={update("Model(s) tested")}
-                className={FIELD_CLASS}
+                options={knownModelNames}
+                listId="models-tested-options"
+                splitValue={splitModels}
               />
             </Field>
+            {unknownModels.length > 0 ? (
+              <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                <p className="text-sm font-medium text-amber-950">New model details</p>
+                <p className="text-xs text-amber-900/80">
+                  These names are not in <code className="text-[11px]">models.csv</code> yet.
+                  Reuse an existing family when possible; enter a new family name only if needed.
+                  For open-weight models, prefer a Hugging Face id (
+                  <code className="text-[11px]">org/model</code>
+                  ); for closed models, use a product URL.
+                </p>
+                {unknownModels.map((model) => {
+                  const details = newModelDetails[model] ?? emptyNewModelDetails();
+                  const familyIsNew =
+                    details.family.trim() !== "" &&
+                    !knownFamilies.some(
+                      (family) => family.toLowerCase() === details.family.trim().toLowerCase()
+                    );
+                  return (
+                    <div
+                      key={model}
+                      className="space-y-3 rounded-md border border-amber-100 bg-white p-3"
+                    >
+                      <p className="text-sm font-semibold text-slate-800">{model}</p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Field
+                          label="Family"
+                          hint={
+                            familyIsNew
+                              ? "This will add a new family."
+                              : "Pick an existing family or type a new one."
+                          }
+                        >
+                          <input
+                            value={details.family}
+                            onChange={updateNewModel(model, "family")}
+                            className={FIELD_CLASS}
+                            list="known-model-families"
+                            required
+                          />
+                        </Field>
+                        <Field label="Openness">
+                          <select
+                            value={details.openness}
+                            onChange={updateNewModel(model, "openness")}
+                            className={FIELD_CLASS}
+                            required
+                          >
+                            <option value="">Select</option>
+                            {MODEL_OPENNESS_OPTIONS.map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <Field label="Release date" hint="YYYY-MM-DD if known">
+                          <input
+                            type="date"
+                            value={details.release_date}
+                            onChange={updateNewModel(model, "release_date")}
+                            className={FIELD_CLASS}
+                          />
+                        </Field>
+                        <Field label="Link" hint="HF org/model or full URL">
+                          <input
+                            value={details.link}
+                            onChange={updateNewModel(model, "link")}
+                            className={FIELD_CLASS}
+                            placeholder="org/model or https://…"
+                          />
+                        </Field>
+                      </div>
+                    </div>
+                  );
+                })}
+                <datalist id="known-model-families">
+                  {knownFamilies.map((family) => (
+                    <option key={family} value={family} />
+                  ))}
+                </datalist>
+              </div>
+            ) : null}
             <Field
               label="Human benchmark?"
               hint="Put yes only if there is an actual accuracy/score reported for humans."

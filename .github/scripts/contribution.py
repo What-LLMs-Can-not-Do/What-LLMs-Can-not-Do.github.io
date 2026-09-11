@@ -226,6 +226,84 @@ def pr_body_from_issue(issue_url: str) -> str:
     )
 
 
+def append_models(models_csv_path: pathlib.Path, new_models: list) -> list[str]:
+    """Append new model catalog rows. Returns model names that were added."""
+    if not new_models:
+        return []
+
+    text = models_csv_path.read_text(encoding="utf-8") if models_csv_path.exists() else ""
+    if text and not text.endswith("\n"):
+        text += "\n"
+    if not text.strip():
+        text = "model,family,openness,release_date,link\n"
+
+    reader = csv.DictReader(io.StringIO(text))
+    fieldnames = reader.fieldnames or ["model", "family", "openness", "release_date", "link"]
+    existing = {(row.get("model") or "").strip().lower() for row in reader if (row.get("model") or "").strip()}
+
+    added: list[str] = []
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fieldnames, lineterminator="\n")
+    for item in new_models:
+        if not isinstance(item, dict):
+            continue
+        model = str(item.get("model") or "").strip()
+        if not model or model.lower() in existing:
+            continue
+        row = {
+            "model": model,
+            "family": str(item.get("family") or "").strip(),
+            "openness": str(item.get("openness") or "").strip(),
+            "release_date": str(item.get("release_date") or "").strip(),
+            "link": str(item.get("link") or "").strip(),
+        }
+        writer.writerow(row)
+        existing.add(model.lower())
+        added.append(model)
+
+    if added:
+        models_csv_path.write_text(text + buf.getvalue(), encoding="utf-8")
+    return added
+
+
+def append_keywords(keywords_csv_path: pathlib.Path, new_keywords: list) -> list[str]:
+    """Append new keyword catalog rows. Returns keywords that were added."""
+    if not new_keywords:
+        return []
+
+    text = keywords_csv_path.read_text(encoding="utf-8") if keywords_csv_path.exists() else ""
+    if text and not text.endswith("\n"):
+        text += "\n"
+    if not text.strip():
+        text = "Category,Keyword\n"
+
+    reader = csv.DictReader(io.StringIO(text))
+    fieldnames = reader.fieldnames or ["Category", "Keyword"]
+    existing = {
+        (row.get("Keyword") or "").strip().lower()
+        for row in reader
+        if (row.get("Keyword") or "").strip()
+    }
+
+    added: list[str] = []
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=fieldnames, lineterminator="\n")
+    for item in new_keywords:
+        if not isinstance(item, dict):
+            continue
+        keyword = str(item.get("keyword") or "").strip()
+        category = str(item.get("category") or "").strip()
+        if not keyword or not category or keyword.lower() in existing:
+            continue
+        writer.writerow({"Category": category, "Keyword": keyword})
+        existing.add(keyword.lower())
+        added.append(keyword)
+
+    if added:
+        keywords_csv_path.write_text(text + buf.getvalue(), encoding="utf-8")
+    return added
+
+
 def main() -> None:
     command = sys.argv[1] if len(sys.argv) > 1 else ""
     if command == "append-row":
@@ -242,6 +320,20 @@ def main() -> None:
         paper = update_csv_row(csv_path, row_id, data)
         pathlib.Path("/tmp/paper_title.txt").write_text(paper, encoding="utf-8")
         pathlib.Path("/tmp/row_id.txt").write_text(str(row_id).strip(), encoding="utf-8")
+        return
+
+    if command == "append-models":
+        models_path = pathlib.Path(os.environ.get("MODELS_CSV_PATH", "public/models.csv"))
+        data = json.loads(os.environ["CONTRIBUTION_JSON"])
+        added = append_models(models_path, data.get("new_models") or [])
+        print(",".join(added))
+        return
+
+    if command == "append-keywords":
+        keywords_path = pathlib.Path(os.environ.get("KEYWORDS_CSV_PATH", "public/keywords.csv"))
+        data = json.loads(os.environ["CONTRIBUTION_JSON"])
+        added = append_keywords(keywords_path, data.get("new_keywords") or [])
+        print(",".join(added))
         return
 
     if command == "write-audio":

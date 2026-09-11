@@ -118,6 +118,34 @@ jobs:
             python3 .github/scripts/contribution.py append-row
           fi
 
+      - name: Append new models to catalog
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          MODELS_CSV_PATH: public/models.csv
+        run: |
+          export MODELS_CSV_PATH
+          export CONTRIBUTION_JSON="$(cat /tmp/contribution.json)"
+          ADDED=$(python3 .github/scripts/contribution.py append-models)
+          if [ -n "$ADDED" ]; then
+            echo "Added models: $ADDED"
+          else
+            echo "No new models to add"
+          fi
+
+      - name: Append new keywords to catalog
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          KEYWORDS_CSV_PATH: public/keywords.csv
+        run: |
+          export KEYWORDS_CSV_PATH
+          export CONTRIBUTION_JSON="$(cat /tmp/contribution.json)"
+          ADDED=$(python3 .github/scripts/contribution.py append-keywords)
+          if [ -n "$ADDED" ]; then
+            echo "Added keywords: $ADDED"
+          else
+            echo "No new keywords to add"
+          fi
+
       - name: Open pull request
         if: steps.guard.outputs.skip != 'true'
         env:
@@ -129,7 +157,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
-          git add public/data.csv
+          git add public/data.csv public/models.csv public/keywords.csv
           if [ -d public/audio ] && [ "$(find public/audio -type f ! -name '.gitkeep' | wc -l)" -gt 0 ]; then
             git add public/audio
           fi
@@ -143,12 +171,12 @@ jobs:
             PR_TITLE="Update table entry #$(cat /tmp/row_id.txt): $(cat /tmp/paper_title.txt)"
             PR_BODY="Automated PR from ${ISSUE_URL}.
 
-          Please review the updated \`public/data.csv\` row and any audio files before merging."
+          Please review the updated \`public/data.csv\` row, any catalog additions (\`models.csv\` / \`keywords.csv\`), and any audio files before merging."
           else
             PR_TITLE="Add table entry: $(cat /tmp/paper_title.txt)"
             PR_BODY="Automated PR from ${ISSUE_URL}.
 
-          Please review the new \`public/data.csv\` row and any audio files before merging."
+          Please review the new \`public/data.csv\` row, any catalog additions (\`models.csv\` / \`keywords.csv\`), and any audio files before merging."
           fi
           PR_URL=$(gh pr create \
             --title "$PR_TITLE" \
