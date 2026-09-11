@@ -1,0 +1,8 @@
+name = "wlcd-contribute"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+
+[vars]
+GITHUB_REPO = "What-LLMs-Can-not-Do/What-LLMs-Can-not-Do.github.io"
+ALLOWED_ORIGINS = "https://what-llms-can-not-do.github.io,http://localhost:5173"
+# Set via: wrangler secret put GITHUB_TOKEN

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CONTRIBUTION_LABEL, GITHUB_REPO } from "./config.js";
+import { CONTRIBUTE_API_URL } from "./config.js";
 import {
   findTableRowById,
   groupKeywordsByCategory,
@@ -62,10 +62,9 @@ const FIELD_CLASS =
   "mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm outline-none focus:border-slate-400";
 const LABEL_CLASS = "block text-sm font-medium text-slate-700";
 
-/** Keep issue URLs under common browser / proxy limits. */
-const MAX_ISSUE_URL_LENGTH = 7200;
 const SUMMARY_MIN_LENGTH = 120;
 const SUMMARY_MAX_LENGTH = 200;
+const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
 
 function Field({ label, hint, children, className = "" }) {
   return (
@@ -249,7 +248,7 @@ function emptyNewKeywordDetails() {
   return { category: "" };
 }
 
-function buildIssueContent(
+function buildContributionPayload(
   form,
   { mode = "addition", entryId = "", newModels = [], newKeywords = [] } = {}
 ) {
@@ -265,52 +264,7 @@ function buildIssueContent(
     payload.new_keywords = newKeywords;
   }
 
-  const paperTitle = form["Paper title"] || "Untitled";
-  const title =
-    mode === "change"
-      ? `[Table change] ID ${entryId.trim()}: ${paperTitle}`
-      : `[Table contribution] ${paperTitle}`;
-
-  const intro =
-    mode === "change"
-      ? "Submitted via the website form. A workflow will open a pull request that updates this entry in `public/data.csv` for review."
-      : "Submitted via the website form. A workflow will open a pull request that appends this entry to `public/data.csv` for review.";
-
-  const body = [
-    "<!-- wlcd-contribution-v1 -->",
-    "## Table contribution",
-    "",
-    intro,
-    "",
-    mode === "change" ? `**Entry ID:** ${entryId.trim()}` : null,
-    `**Paper:** ${form["Paper title"]}`,
-    `**Paper link:** ${form["Paper Link"]}`,
-    form["Dataset Link"] ? `**Dataset link:** ${form["Dataset Link"]}` : null,
-    form["Other Links"] ? `**Other links:** ${form["Other Links"]}` : null,
-    newModels.length > 0
-      ? `**New models:** ${newModels.map((item) => item.model).join(", ")}`
-      : null,
-    newKeywords.length > 0
-      ? `**New keywords:** ${newKeywords.map((item) => item.keyword).join(", ")}`
-      : null,
-    "",
-    "```json",
-    JSON.stringify(payload, null, 2),
-    "```",
-    "",
-  ]
-    .filter((line) => line !== null)
-    .join("\n");
-
-  return { title, body };
-}
-
-function buildIssueUrl(title, body, { includeBody = true } = {}) {
-  const params = new URLSearchParams();
-  params.set("title", title);
-  params.set("labels", CONTRIBUTION_LABEL);
-  if (includeBody) params.set("body", body);
-  return `https://github.com/${GITHUB_REPO}/issues/new?${params.toString()}`;
+  return payload;
 }
 
 const initialForm = {
@@ -341,7 +295,9 @@ export default function Contribute() {
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
   const [entryLoadError, setEntryLoadError] = useState("");
-  const [pasteHint, setPasteHint] = useState(false);
+  const [prUrl, setPrUrl] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [audioFiles, setAudioFiles] = useState([]);
   const [keywordList, setKeywordList] = useState([]);
   const [keywordCategories, setKeywordCategories] = useState(() => new Map());
   const [tableRows, setTableRows] = useState([]);
@@ -508,6 +464,7 @@ export default function Contribute() {
     setMode(nextMode);
     setEntryId("");
     setForm(initialForm);
+    setAudioFiles([]);
     setNewModelDetails({});
     setNewKeywordDetails({});
     setEntryLoadError("");
@@ -556,7 +513,13 @@ export default function Contribute() {
   const onSubmit = async (event) => {
     event.preventDefault();
     setError("");
-    setPasteHint(false);
+
+    if (!CONTRIBUTE_API_URL) {
+      setError(
+        "Contribute API is not configured (set VITE_CONTRIBUTE_API_URL). Locally, run the worker with wrangler and point the env var at it."
+      );
+      return;
+    }
 
     if (mode === "change") {
       const id = entryId.trim();
@@ -590,6 +553,18 @@ export default function Contribute() {
       }
     }
 
+    const totalAudio = audioFiles.reduce((sum, file) => sum + file.size, 0);
+    if (totalAudio > MAX_AUDIO_BYTES) {
+      setError("Total audio size exceeds the 20 MB limit.");
+      return;
+    }
+    for (const file of audioFiles) {
+      if (!/\.(mp3|wav)$/i.test(file.name)) {
+        setError(`Only .mp3 and .wav files are allowed (got ${file.name}).`);
+        return;
+      }
+    }
+
     const newModels = unknownModels.map((model) => {
       const details = newModelDetails[model] ?? emptyNewModelDetails();
       return {
@@ -609,44 +584,44 @@ export default function Contribute() {
       };
     });
 
-    const { title, body } = buildIssueContent(form, {
+    const payload = buildContributionPayload(form, {
       mode,
       entryId,
       newModels,
       newKeywords,
     });
-    let url = buildIssueUrl(title, body);
 
-    if (url.length > MAX_ISSUE_URL_LENGTH) {
-      try {
-        await navigator.clipboard.writeText(body);
-        setPasteHint(true);
-      } catch {
-        setError(
-          "Submission is too large to open automatically. Copy the generated issue body manually, then continue on GitHub."
-        );
-        return;
-      }
-      url = buildIssueUrl(
-        title,
-        [
-          "<!-- wlcd-contribution-v1 -->",
-          "## Table contribution",
-          "",
-          "The full submission was copied to your clipboard because it was too large for the URL.",
-          "Paste it here (Ctrl/Cmd+V), replacing these instructions, then submit the issue.",
-          "",
-        ].join("\n")
-      );
+    const body = new FormData();
+    body.append("payload", JSON.stringify(payload));
+    for (const file of audioFiles) {
+      body.append("audio", file, file.name);
     }
 
-    setStatus("sent");
-    setMode("addition");
-    setEntryId("");
-    setForm(initialForm);
-    setNewModelDetails({});
-    setNewKeywordDetails({});
-    window.open(url, "_blank", "noopener,noreferrer");
+    setSubmitting(true);
+    try {
+      const endpoint = CONTRIBUTE_API_URL.replace(/\/$/, "") + "/contribute";
+      const response = await fetch(endpoint, { method: "POST", body });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.error || `Submission failed (${response.status})`);
+      }
+      if (!result.pr_url) {
+        throw new Error("Worker did not return a pull request URL");
+      }
+
+      setPrUrl(result.pr_url);
+      setStatus("sent");
+      setMode("addition");
+      setEntryId("");
+      setForm(initialForm);
+      setAudioFiles([]);
+      setNewModelDetails({});
+      setNewKeywordDetails({});
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Submission failed");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -656,32 +631,33 @@ export default function Contribute() {
       </h1>
       <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600">
         {mode === "change"
-          ? "Propose edits to an existing table entry. Enter its ID to load the current values, then submit your changes on GitHub."
-          : "Propose a benchmark or paper for the table. Submitting opens a GitHub issue; a pull request is created automatically. You need a GitHub account to finish the submission."}
+          ? "Propose edits to an existing table entry. Enter its ID to load the current values, then submit — a pull request is opened for review."
+          : "Propose a benchmark or paper for the table. Submitting opens a pull request with your entry (and any audio) for maintainers to review."}
       </p>
 
       {status === "sent" ? (
         <div className="mt-8 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
-          <p className="font-medium">Continue on GitHub to finish.</p>
+          <p className="font-medium">Pull request opened.</p>
           <p className="mt-1">
-            A new browser tab should have opened with a prefilled issue. Submit that
-            issue, then maintainers will get a PR to review.
+            Thanks — maintainers will review the CSV (and any audio) in the PR.
           </p>
-          <p className="mt-2 rounded border border-emerald-300 bg-white/70 px-3 py-2 text-emerald-950">
-            If your benchmark includes audio, upload the .mp3/.wav files on the GitHub
-            issue page before submitting the issue.
-          </p>
-          {pasteHint && (
-            <p className="mt-2 rounded border border-emerald-300 bg-white/70 px-3 py-2 text-emerald-950">
-              The full submission was copied to your clipboard — paste it into the issue
-              body before submitting.
+          {prUrl ? (
+            <p className="mt-2">
+              <a
+                href={prUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-emerald-900 underline hover:text-emerald-950"
+              >
+                View pull request
+              </a>
             </p>
-          )}
+          ) : null}
           <button
             type="button"
             onClick={() => {
               setStatus("idle");
-              setPasteHint(false);
+              setPrUrl("");
             }}
             className="mt-4 text-sm font-medium text-emerald-800 underline hover:text-emerald-950"
           >
@@ -1107,7 +1083,7 @@ export default function Contribute() {
             </div>
             <Field
               label="Benchmark example"
-              hint="Benchmark text. Reference .mp3/.wav filenames to show audio players above the text by default. Write a filename inline in a sentence to embed the player there (e.g. Listen to sample.mp3 and answer …), or add [audio below] to place players after the text. Upload audio files on the GitHub issue page before submitting the issue."
+              hint="Benchmark text. Reference .mp3/.wav filenames to show audio players above the text by default. Write a filename inline in a sentence to embed the player there (e.g. Listen to sample.mp3 and answer …), or add [audio below] to place players after the text. Attach matching audio files below (20 MB total max)."
             >
               <textarea
                 rows={4}
@@ -1115,6 +1091,30 @@ export default function Contribute() {
                 onChange={update("Benchmark Example")}
                 className={FIELD_CLASS}
               />
+            </Field>
+            <Field
+              label="Benchmark audio"
+              hint="Optional .mp3 or .wav files referenced in the benchmark example. Filenames must match the text (e.g. sample.mp3)."
+            >
+              <input
+                type="file"
+                accept=".mp3,.wav,audio/mpeg,audio/wav,audio/x-wav"
+                multiple
+                onChange={(event) => {
+                  const next = Array.from(event.target.files || []);
+                  setAudioFiles(next);
+                }}
+                className="mt-1 block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-800 hover:file:bg-slate-200"
+              />
+              {audioFiles.length > 0 ? (
+                <ul className="mt-2 list-inside list-disc text-xs text-slate-600">
+                  {audioFiles.map((file) => (
+                    <li key={`${file.name}-${file.size}-${file.lastModified}`}>
+                      {file.name} ({Math.max(1, Math.round(file.size / 1024))} KB)
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </Field>
             <Field label="Abstract" hint="The abstract from the paper, verbatim.">
               <textarea
@@ -1143,11 +1143,12 @@ export default function Contribute() {
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="submit"
-              className="inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+              disabled={submitting}
+              className="inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Continue on GitHub
+              {submitting ? "Opening pull request…" : "Submit pull request"}
             </button>
-            <span className="text-xs text-slate-500">Opens a prefilled issue → auto PR</span>
+            <span className="text-xs text-slate-500">Creates a PR on the site repo</span>
           </div>
         </form>
       )}

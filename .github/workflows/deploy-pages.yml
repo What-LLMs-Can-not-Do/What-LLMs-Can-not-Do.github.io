@@ -24,7 +24,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm run build
+      - name: Build
+        env:
+          VITE_CONTRIBUTE_API_URL: ${{ vars.VITE_CONTRIBUTE_API_URL }}
+          VITE_GOATCOUNTER_CODE: ${{ vars.VITE_GOATCOUNTER_CODE }}
+          VITE_GITHUB_REPO: ${{ vars.VITE_GITHUB_REPO }}
+        run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
