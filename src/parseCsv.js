@@ -215,7 +215,9 @@ export function tableRowToContributionForm(row) {
     Keywords: row.Keywords ?? "",
     "Paper title": row["Paper title"] ?? "",
     License: row.License ?? "",
-    "Language(s)": row["Language(s)"] ?? row["Language(s) tested"] ?? "",
+    "Language(s)": splitLanguages(
+      row["Language(s)"] ?? row["Language(s) tested"] ?? ""
+    ).join(", "),
     "Model(s) tested": row["Model(s) tested"] ?? "",
     "Year of publication": row["Year of publication"] ?? "",
     "Paper Link": row["Paper Link"] ?? row.Link ?? "",
@@ -695,6 +697,15 @@ export function splitKeywords(value) {
   if (!value?.trim()) return [];
   return value
     .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+/** Split Language(s) on commas or semicolons (both appear in the catalog). */
+export function splitLanguages(value) {
+  if (!value?.trim()) return [];
+  return value
+    .split(/[,;]/)
     .map((part) => part.trim())
     .filter(Boolean);
 }

@@ -25,6 +25,7 @@ import {
   canonicalizeModelName,
   sortKeywords,
   splitKeywords,
+  splitLanguages,
   splitModels,
 } from "./parseCsv.js";
 
@@ -447,7 +448,7 @@ function ModelsCell({ value, expanded, releaseDates, modelMeta }) {
 }
 
 function LanguagesCell({ value, expanded }) {
-  const languages = splitKeywords(value);
+  const languages = splitLanguages(value);
   if (languages.length === 0) return null;
 
   if (expanded && languages.length > 50) {
@@ -891,7 +892,7 @@ function languageMatchKeys(language) {
 
 function rowHasLanguage(row, language) {
   const targets = new Set(languageMatchKeys(language));
-  return splitKeywords(row["Language(s)"] ?? row["Language(s) tested"]).some((item) =>
+  return splitLanguages(row["Language(s)"] ?? row["Language(s) tested"]).some((item) =>
     targets.has(item.toLowerCase())
   );
 }
@@ -1258,7 +1259,7 @@ export default function Table() {
   const languageOptions = useMemo(() => {
     const values = [...LANGUAGE_FILTER_EXTRA_OPTIONS];
     for (const row of data) {
-      values.push(...splitKeywords(row["Language(s)"] ?? row["Language(s) tested"]));
+      values.push(...splitLanguages(row["Language(s)"] ?? row["Language(s) tested"]));
     }
     return uniqueSorted(values);
   }, [data]);

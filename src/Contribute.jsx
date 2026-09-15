@@ -12,6 +12,7 @@ import {
   parseTableCsv,
   sortKeywords,
   splitKeywords,
+  splitLanguages,
   splitModels,
   tableRowToContributionForm,
 } from "./parseCsv.js";
@@ -176,7 +177,7 @@ function ComboboxInput({ value, onChange, listId, options, filterValue, applyOpt
 }
 
 function currentCommaDraft(value) {
-  const parts = String(value ?? "").split(",");
+  const parts = String(value ?? "").split(/[,;]/);
   return parts[parts.length - 1] ?? "";
 }
 
@@ -203,7 +204,7 @@ function CommaSeparatedCombobox({ value, onChange, options, listId, splitValue =
       options={filteredOptions}
       filterValue={() => ""}
       applyOption={(current, option) => {
-        const parts = String(current ?? "").split(",");
+        const parts = String(current ?? "").split(/[,;]/);
         const completed = [
           ...parts.slice(0, -1).map((part) => part.trim()).filter(Boolean),
           option,
@@ -329,6 +330,21 @@ export default function Contribute() {
     }
     extras.sort((a, b) => a.localeCompare(b));
     return [...LICENSE_OPTIONS, ...extras];
+  }, [tableRows]);
+
+  const languageOptions = useMemo(() => {
+    const seen = new Set();
+    const options = [];
+    for (const row of tableRows) {
+      for (const language of splitLanguages(row["Language(s)"] ?? row["Language(s) tested"])) {
+        const key = language.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        options.push(language);
+      }
+    }
+    options.sort((a, b) => a.localeCompare(b));
+    return options;
   }, [tableRows]);
 
   const knownFamilies = useMemo(() => {
@@ -924,12 +940,14 @@ export default function Contribute() {
             <h2 className="text-lg font-semibold text-slate-900">Evaluation details</h2>
             <Field
               label="Language(s)"
-              hint="Comma-separated. Glottolog official names; if not in Glottolog (e.g. conlangs), use the Wikipedia name; otherwise use your best judgment."
+              hint="Comma-separated. Glottolog official names; if not in Glottolog (e.g. conlangs), use the Wikipedia name; otherwise use your best judgment. Pick from existing names or type a new one."
             >
-              <input
+              <CommaSeparatedCombobox
                 value={form["Language(s)"]}
                 onChange={update("Language(s)")}
-                className={FIELD_CLASS}
+                options={languageOptions}
+                listId="languages-options"
+                splitValue={splitLanguages}
               />
             </Field>
             <Field
@@ -976,12 +994,11 @@ export default function Contribute() {
                               : "Pick an existing family or type a new one."
                           }
                         >
-                          <input
+                          <ComboboxInput
                             value={details.family}
                             onChange={updateNewModel(model, "family")}
-                            className={FIELD_CLASS}
-                            list="known-model-families"
-                            required
+                            listId={`new-model-family-${modelIdentityKey(model)}`}
+                            options={knownFamilies}
                           />
                         </Field>
                         <Field label="Openness">
@@ -1019,11 +1036,6 @@ export default function Contribute() {
                     </div>
                   );
                 })}
-                <datalist id="known-model-families">
-                  {knownFamilies.map((family) => (
-                    <option key={family} value={family} />
-                  ))}
-                </datalist>
               </div>
             ) : null}
             <Field
