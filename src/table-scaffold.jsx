@@ -1610,7 +1610,7 @@ export default function Table() {
       </div>
 
       <p className="mt-0 mb-6 pt-2 text-xs text-gray-600 sm:text-sm">
-        <sup>†</sup> Humans were not tested, but the task is trivial so perfect performance is expected.
+        <sup>†</sup> Humans were not tested, but the task is assumed to be trivial for humans with expertise in the domain, or uses human-annotated labels with an objective answer.
       </p>
     </div>
   );
