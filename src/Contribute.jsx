@@ -645,17 +645,54 @@ export default function Contribute() {
       <h1 className="!mt-0 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
         {mode === "change" ? "Suggest a change" : "Suggest an addition"}
       </h1>
-      <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600">
-        {mode === "change"
-          ? "Propose edits to an existing table entry. Enter its ID to load the current values, then submit — a pull request is opened for review."
-          : "Propose a benchmark or paper for the table. Submitting opens a pull request with your entry (and any audio) for maintainers to review."}
-      </p>
+      {mode === "change" ? (
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600">
+          Propose edits to an existing table entry. Enter its ID to load the current values,
+          then submit — a pull request is opened for review.
+        </p>
+      ) : (
+        <div className="mt-3 flex max-w-2xl flex-col gap-3 text-sm leading-relaxed text-slate-600">
+          <p className="m-0">
+            Propose a benchmark or paper for the table. Submitting opens a pull request with
+            your entry for review.
+          </p>
+          <div className="flex flex-col gap-1.5">
+            <p className="m-0 font-medium text-slate-800">Criteria</p>
+            <ul className="m-0 list-disc space-y-1 pl-5">
+              <li>
+                The paper must be from <strong className="font-medium text-slate-800">2025 or later</strong>.
+                If the original work is older but someone has tested the same task on a newer
+                model, submit that newer evaluation instead.
+              </li>
+              <li>
+                The paper must include a <strong className="font-medium text-slate-800">human baseline</strong>,
+                or use{" "}
+                <strong className="font-medium text-slate-800">objective human-annotated labels</strong>.
+              </li>
+            </ul>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <p className="m-0">
+              <span className="font-medium text-slate-800">For now,</span> we will not accept
+              papers that fall under:
+            </p>
+            <ul className="m-0 list-disc space-y-1 pl-5">
+              <li>Non-natural language tasks (e.g. computer vision)</li>
+              <li>Tasks focused on tool use or agentic LLMs</li>
+            </ul>
+            <p className="m-0">
+              We&apos;re looking for experts in these fields to help review submissions. If
+              that&apos;s you, contact us.
+            </p>
+          </div>
+        </div>
+      )}
 
       {status === "sent" ? (
         <div className="mt-8 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
           <p className="font-medium">Pull request opened.</p>
           <p className="mt-1">
-            Thanks — maintainers will review the CSV (and any audio) in the PR.
+            Thanks — maintainers will review the CSV in the PR.
           </p>
           {prUrl ? (
             <p className="mt-2">
