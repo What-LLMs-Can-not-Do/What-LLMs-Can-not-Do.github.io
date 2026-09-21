@@ -210,7 +210,7 @@ export default function Subscribe() {
           <button
             type="submit"
             disabled={submitting}
-            className="inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center rounded-md bg-[#1870E0] px-4 py-2 text-sm font-medium text-white hover:bg-[#1560C4] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting ? "Subscribing…" : "Subscribe"}
           </button>

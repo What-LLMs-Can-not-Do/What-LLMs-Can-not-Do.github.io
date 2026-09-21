@@ -7,7 +7,7 @@ binding = "DB"
 database_name = "wlcd-subscribers"
 # Create with: npx wrangler d1 create wlcd-subscribers
 # Then paste the database_id here and redeploy.
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "0bc85b3d-2e64-485d-8952-20d2ffe1ba36"
 
 [vars]
 ALLOWED_ORIGINS = "https://what-llms-can-not-do.github.io,http://localhost:5173,http://127.0.0.1:5173"
