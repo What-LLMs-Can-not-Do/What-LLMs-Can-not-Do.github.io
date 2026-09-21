@@ -43,19 +43,63 @@ export function serializeCsvRow(fields: string[]): string {
     .join(",");
 }
 
-export function parseCsvRecords(text: string): { headers: string[]; rows: Record<string, string>[] } {
-  const lines = text.replace(/^\uFEFF/, "").split(/\r?\n/);
-  while (lines.length && lines[lines.length - 1] === "") {
-    lines.pop();
+/**
+ * Parse a full CSV document into rows of fields.
+ * Unlike line-splitting, this respects newlines inside quoted fields (RFC 4180).
+ */
+export function parseCsvRows(text: string): string[][] {
+  const input = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+
+    if (inQuotes) {
+      if (ch === '"') {
+        if (input[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ",") {
+      row.push(field);
+      field = "";
+    } else if (ch === "\n") {
+      row.push(field);
+      field = "";
+      if (row.some((cell) => cell !== "")) rows.push(row);
+      row = [];
+    } else {
+      field += ch;
+    }
   }
-  if (!lines.length) {
+
+  row.push(field);
+  if (row.some((cell) => cell !== "")) rows.push(row);
+  return rows;
+}
+
+export function parseCsvRecords(text: string): { headers: string[]; rows: Record<string, string>[] } {
+  const table = parseCsvRows(text);
+  if (!table.length) {
     return { headers: [], rows: [] };
   }
-  const headers = parseCsvLine(lines[0]);
+  const headers = table[0];
   const rows: Record<string, string>[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    if (!lines[i].trim()) continue;
-    const values = parseCsvLine(lines[i]);
+  for (let i = 1; i < table.length; i++) {
+    const values = table[i];
     const row: Record<string, string> = {};
     for (let j = 0; j < headers.length; j++) {
       row[headers[j]] = values[j] ?? "";
