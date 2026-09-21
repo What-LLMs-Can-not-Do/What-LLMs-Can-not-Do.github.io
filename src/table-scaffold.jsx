@@ -1487,6 +1487,19 @@ export default function Table() {
 
   return (
     <div className="w-full px-4 py-6 sm:px-8 lg:px-12 text-xs text-left text-gray-800 sm:text-sm">
+      <div className="mb-5 max-w-3xl space-y-2 text-sm leading-relaxed text-slate-600">
+        <p>
+          Use the filters below to narrow by category, keyword, language, model,
+          or license, and the search box for exact-word matches across the table.
+          Click a column header to sort; toggle columns with the checkboxes.
+        </p>
+        <p>
+          Click a row to expand it for the abstract, summary, and benchmark
+          example. Hover a model family badge to see the concrete models tested
+          and their openness.
+        </p>
+      </div>
+
       <div className="mb-4 grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <CategoryFilterBar
           categories={categoryOptions}
