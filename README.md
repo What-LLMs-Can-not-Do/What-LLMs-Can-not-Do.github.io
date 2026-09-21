@@ -15,3 +15,27 @@ VITE_CONTRIBUTE_API_URL=http://127.0.0.1:8787 npm run dev
 ```
 
 Manual GitHub issues with the `table-contribution` label still create PRs via [.github/workflows/contribution-pr.yml](.github/workflows/contribution-pr.yml).
+
+## Email subscriptions (Resend + D1)
+
+The **Subscribe** page lets people opt into News, table Additions, and/or table Changes. Double opt-in confirmation is required. See [workers/subscribe/README.md](workers/subscribe/README.md) for full setup.
+
+Short version:
+
+1. Create a [Resend](https://resend.com) account, verify a sending domain, and create an API key.
+2. Create and migrate the D1 database, set worker secrets (`RESEND_API_KEY`, `FROM_EMAIL`, `NOTIFY_SECRET`), deploy `workers/subscribe`.
+3. Set repository **variables**:
+   - `VITE_SUBSCRIBE_API_URL` — worker origin (Pages build)
+   - `SUBSCRIBE_API_URL` — same worker origin (notify/news workflows)
+4. Set repository **secret** `SUBSCRIBE_NOTIFY_SECRET` to the same value as the worker `NOTIFY_SECRET`.
+
+Automated mail:
+
+- Push to `main` that changes `public/data.csv` → [.github/workflows/notify-subscribers.yml](.github/workflows/notify-subscribers.yml) classifies additions vs changes and calls `POST /notify`.
+- Manual news: Actions → **Send news email** → [.github/workflows/send-news.yml](.github/workflows/send-news.yml) (`workflow_dispatch`).
+
+Locally:
+
+```bash
+VITE_SUBSCRIBE_API_URL=http://127.0.0.1:8787 npm run dev
+```

@@ -1,0 +1,58 @@
+name: Send news email
+
+on:
+  workflow_dispatch:
+    inputs:
+      subject:
+        description: Email subject
+        required: true
+        type: string
+      body:
+        description: Plain-text email body
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    if: ${{ vars.SUBSCRIBE_API_URL != '' }}
+    steps:
+      - name: POST /news
+        env:
+          SUBSCRIBE_API_URL: ${{ vars.SUBSCRIBE_API_URL }}
+          SUBSCRIBE_NOTIFY_SECRET: ${{ secrets.SUBSCRIBE_NOTIFY_SECRET }}
+          NEWS_SUBJECT: ${{ inputs.subject }}
+          NEWS_BODY: ${{ inputs.body }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import json, os, urllib.error, urllib.request
+
+          api = os.environ["SUBSCRIBE_API_URL"].rstrip("/")
+          secret = os.environ["SUBSCRIBE_NOTIFY_SECRET"]
+          payload = json.dumps(
+              {
+                  "subject": os.environ["NEWS_SUBJECT"],
+                  "body": os.environ["NEWS_BODY"],
+              }
+          ).encode("utf-8")
+          req = urllib.request.Request(
+              f"{api}/news",
+              data=payload,
+              headers={
+                  "Content-Type": "application/json",
+                  "X-Notify-Secret": secret,
+              },
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=120) as resp:
+                  print(resp.status, resp.read().decode("utf-8", errors="replace"))
+          except urllib.error.HTTPError as err:
+              detail = err.read().decode("utf-8", errors="replace")
+              raise SystemExit(f"news failed: {err.code} {detail}")
+          PY

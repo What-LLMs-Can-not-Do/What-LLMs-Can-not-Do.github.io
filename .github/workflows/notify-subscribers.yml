@@ -1,0 +1,82 @@
+name: Notify subscribers
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "public/data.csv"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notify-subscribers
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    if: ${{ vars.SUBSCRIBE_API_URL != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Classify data.csv changes
+        id: classify
+        shell: bash
+        run: |
+          set -euo pipefail
+          BEFORE="${{ github.event.before }}"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            BEFORE="$(git rev-parse HEAD^)"
+          fi
+          python3 .github/scripts/classify_table_diff.py \
+            --before "$BEFORE" \
+            --after "${{ github.sha }}" \
+            --pr-url "" \
+            > /tmp/notify-events.json
+          echo "events<<EOF" >> "$GITHUB_OUTPUT"
+          cat /tmp/notify-events.json >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+          cat /tmp/notify-events.json
+
+      - name: Send notify emails
+        env:
+          SUBSCRIBE_API_URL: ${{ vars.SUBSCRIBE_API_URL }}
+          SUBSCRIBE_NOTIFY_SECRET: ${{ secrets.SUBSCRIBE_NOTIFY_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          API="${SUBSCRIBE_API_URL%/}"
+          count="$(python3 -c 'import json; print(len(json.load(open("/tmp/notify-events.json"))["events"]))')"
+          if [ "$count" = "0" ]; then
+            echo "No titled-row additions/changes to notify about."
+            exit 0
+          fi
+          python3 <<'PY'
+          import json, os, urllib.error, urllib.request
+
+          api = os.environ["SUBSCRIBE_API_URL"].rstrip("/")
+          secret = os.environ["SUBSCRIBE_NOTIFY_SECRET"]
+          events = json.load(open("/tmp/notify-events.json"))["events"]
+
+          for event in events:
+              payload = json.dumps(event).encode("utf-8")
+              req = urllib.request.Request(
+                  f"{api}/notify",
+                  data=payload,
+                  headers={
+                      "Content-Type": "application/json",
+                      "X-Notify-Secret": secret,
+                  },
+                  method="POST",
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=120) as resp:
+                      body = resp.read().decode("utf-8", errors="replace")
+                      print(event["type"], event["title"][:80], "->", resp.status, body)
+              except urllib.error.HTTPError as err:
+                  detail = err.read().decode("utf-8", errors="replace")
+                  raise SystemExit(f"notify failed for {event}: {err.code} {detail}")
+          PY

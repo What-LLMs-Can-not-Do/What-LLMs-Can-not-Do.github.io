@@ -1,0 +1,20 @@
+name = "wlcd-subscribe"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "wlcd-subscribers"
+# Create with: npx wrangler d1 create wlcd-subscribers
+# Then paste the database_id here and redeploy.
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
+
+[vars]
+ALLOWED_ORIGINS = "https://what-llms-can-not-do.github.io,http://localhost:5173,http://127.0.0.1:5173"
+SITE_ORIGIN = "https://what-llms-can-not-do.github.io"
+# FROM_EMAIL must be on a Resend-verified domain, e.g. "WLCD <updates@yourdomain.org>"
+# Secrets (wrangler secret put):
+#   RESEND_API_KEY
+#   FROM_EMAIL
+#   NOTIFY_SECRET
+#   TOKEN_SECRET

@@ -45,6 +45,12 @@ export default function Home() {
           >
             Suggest an addition
           </Link>
+          <Link
+            to="/subscribe"
+            className="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+          >
+            Subscribe
+          </Link>
         </div>
       </div>
 
