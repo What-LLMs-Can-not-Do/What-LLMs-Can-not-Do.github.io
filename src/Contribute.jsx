@@ -744,9 +744,6 @@ export default function Contribute() {
 
       setPrUrl(result.pr_url);
       setStatus("sent");
-      setMode("addition");
-      setEntryId("");
-      setForm(initialForm);
       setAudioFiles([]);
       setNewModelDetails({});
       setNewKeywordDetails({});
@@ -828,6 +825,12 @@ export default function Contribute() {
             onClick={() => {
               setStatus("idle");
               setPrUrl("");
+              setEntryId("");
+              setForm(initialForm);
+              setAudioFiles([]);
+              setNewModelDetails({});
+              setNewKeywordDetails({});
+              setError("");
             }}
             className="mt-4 text-sm font-medium text-emerald-800 underline hover:text-emerald-950"
           >
