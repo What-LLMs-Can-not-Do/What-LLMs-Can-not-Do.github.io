@@ -117,6 +117,114 @@ export function serializeCsv(headers: string[], rows: Record<string, string>[]):
   return `${lines.join("\n")}\n`;
 }
 
+/** Prefer the file's existing newline style so rewrites don't churn every line. */
+export function detectEol(text: string): "\r\n" | "\n" {
+  return text.includes("\r\n") ? "\r\n" : "\n";
+}
+
+export type SpannedCsvRow = {
+  /** Inclusive start offset in the original text. */
+  start: number;
+  /** Exclusive end offset (includes trailing newline when present). */
+  end: number;
+  fields: string[];
+};
+
+/**
+ * Parse CSV into rows with original-text spans (RFC 4180 multiline quotes).
+ * Empty records are skipped but still advance offsets.
+ */
+export function parseCsvSpannedRows(text: string): SpannedCsvRow[] {
+  const input = text.replace(/^\uFEFF/, "");
+  const rows: SpannedCsvRow[] = [];
+  let rowStart = 0;
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  let i = 0;
+
+  const finishRow = (end: number) => {
+    row.push(field);
+    field = "";
+    if (row.some((cell) => cell !== "")) {
+      rows.push({ start: rowStart, end, fields: row });
+    }
+    row = [];
+    rowStart = end;
+  };
+
+  while (i < input.length) {
+    const ch = input[i];
+
+    if (inQuotes) {
+      if (ch === '"') {
+        if (input[i + 1] === '"') {
+          field += '"';
+          i += 2;
+          continue;
+        }
+        inQuotes = false;
+        i++;
+        continue;
+      }
+      field += ch;
+      i++;
+      continue;
+    }
+
+    if (ch === '"') {
+      inQuotes = true;
+      i++;
+      continue;
+    }
+    if (ch === ",") {
+      row.push(field);
+      field = "";
+      i++;
+      continue;
+    }
+    if (ch === "\r" && input[i + 1] === "\n") {
+      finishRow(i + 2);
+      i += 2;
+      continue;
+    }
+    if (ch === "\n") {
+      finishRow(i + 1);
+      i++;
+      continue;
+    }
+    field += ch;
+    i++;
+  }
+
+  if (field !== "" || row.length > 0) {
+    finishRow(input.length);
+  }
+
+  return rows;
+}
+
+function rowTerminator(text: string, end: number, fallback: "\r\n" | "\n"): string {
+  if (end >= 2 && text.slice(end - 2, end) === "\r\n") return "\r\n";
+  if (end >= 1 && text[end - 1] === "\n") return "\n";
+  return fallback;
+}
+
+function recordToObject(headers: string[], fields: string[]): Record<string, string> {
+  const row: Record<string, string> = {};
+  for (let j = 0; j < headers.length; j++) {
+    row[headers[j]] = fields[j] ?? "";
+  }
+  return row;
+}
+
+function isTableHeaderFields(fields: string[]): boolean {
+  return (
+    fields[0] === "General category" ||
+    (fields[0] === "ID" && fields[1] === "General category")
+  );
+}
+
 const AUDIO_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]*\.(mp3|wav)$/i;
 
 export function isSafeAudioName(name: string): boolean {
@@ -193,19 +301,29 @@ function fieldMapFromData(data: ContributionData, rowId = ""): Record<string, st
 }
 
 export function appendDataCsv(csvText: string, data: ContributionData): { text: string; paperTitle: string } {
-  const lines = csvText.replace(/\r\n/g, "\n").split("\n");
-  while (lines.length && lines[lines.length - 1] === "") lines.pop();
-  const headerIdx = findHeaderIndex(lines);
-  const prefix = lines.slice(0, headerIdx);
-  const tableText = lines.slice(headerIdx).join("\n");
-  const { headers, rows } = parseCsvRecords(tableText);
-  const rowId = nextRowId(headers, rows);
-  const fieldMap = fieldMapFromData(data, rowId);
-  rows.push(Object.fromEntries(headers.map((h) => [h, fieldMap[h] ?? ""])));
+  const text = csvText.replace(/^\uFEFF/, "");
+  const eol = detectEol(text);
+  const spanned = parseCsvSpannedRows(text);
+  const headerRow = spanned.find((r) => isTableHeaderFields(r.fields));
+  if (!headerRow) throw new Error("Could not find header row in table CSV");
 
-  const out = [...prefix, serializeCsvRow(headers), ...rows.map((r) => serializeCsvRow(headers.map((h) => r[h] ?? "")))];
-  const paperTitle = (String(data["Paper title"] || "submission").trim() || "submission");
-  return { text: `${out.join("\n")}\n`, paperTitle };
+  const headers = headerRow.fields;
+  const fieldMap = fieldMapFromData(data, nextRowId(headers, []));
+  // Prefer UI-assigned IDs: no ID column in current catalog.
+  if (headers.includes("ID")) {
+    const existing = spanned
+      .filter((r) => r.start > headerRow.start)
+      .map((r) => recordToObject(headers, r.fields));
+    fieldMap.ID = nextRowId(headers, existing);
+  }
+
+  const newLine = serializeCsvRow(headers.map((h) => fieldMap[h] ?? ""));
+  let out = text;
+  if (out && !out.endsWith("\n")) out += eol;
+  out += `${newLine}${eol}`;
+
+  const paperTitle = String(data["Paper title"] || "submission").trim() || "submission";
+  return { text: out, paperTitle };
 }
 
 export function updateDataCsv(
@@ -216,46 +334,53 @@ export function updateDataCsv(
   const rowId = String(rowIdRaw).trim();
   if (!rowId) throw new Error("Missing row ID for table change");
 
-  const lines = csvText.replace(/\r\n/g, "\n").split("\n");
-  while (lines.length && lines[lines.length - 1] === "") lines.pop();
-  const headerIdx = findHeaderIndex(lines);
-  const prefix = lines.slice(0, headerIdx);
-  const tableText = lines.slice(headerIdx).join("\n");
-  const { headers, rows } = parseCsvRecords(tableText);
+  const text = csvText.replace(/^\uFEFF/, "");
+  const eol = detectEol(text);
+  const spanned = parseCsvSpannedRows(text);
+  const headerIdx = spanned.findIndex((r) => isTableHeaderFields(r.fields));
+  if (headerIdx === -1) throw new Error("Could not find header row in table CSV");
 
-  let found = false;
-  let updated: Record<string, string>[];
+  const headers = spanned[headerIdx].fields;
+  const dataRows = spanned.slice(headerIdx + 1);
+
+  let target: SpannedCsvRow | undefined;
+  let existing: Record<string, string> | undefined;
 
   if (!headers.includes("ID")) {
+    // Match the site UI: IDs are 1-based among rows that have a paper title.
+    const titled = dataRows.filter((r) => (r.fields[headers.indexOf("Paper title")] || "").trim());
     const idx = Number.parseInt(rowId, 10) - 1;
-    if (Number.isNaN(idx) || idx < 0 || idx >= rows.length) {
+    if (Number.isNaN(idx) || idx < 0 || idx >= titled.length) {
       throw new Error(`No row with ID ${rowId}`);
     }
-    const fieldMap = fieldMapFromData(data, "");
-    updated = rows.map((row, i) =>
-      i === idx ? Object.fromEntries(headers.map((h) => [h, fieldMap[h] ?? row[h] ?? ""])) : row
-    );
-    found = true;
+    target = titled[idx];
+    existing = recordToObject(headers, target.fields);
   } else {
-    updated = rows.map((row) => {
-      if ((row.ID || "").trim() === rowId) {
-        found = true;
-        const fieldMap = fieldMapFromData(data, rowId);
-        return Object.fromEntries(headers.map((h) => [h, fieldMap[h] ?? row[h] ?? ""]));
-      }
-      return row;
-    });
+    const idIdx = headers.indexOf("ID");
+    target = dataRows.find((r) => (r.fields[idIdx] || "").trim() === rowId);
+    if (!target) throw new Error(`No row with ID ${rowId}`);
+    existing = recordToObject(headers, target.fields);
   }
 
-  if (!found) throw new Error(`No row with ID ${rowId}`);
+  const fieldMap = fieldMapFromData(data, headers.includes("ID") ? rowId : "");
+  const merged = Object.fromEntries(
+    headers.map((h) => {
+      // Preserve cells the form does not own (e.g. "Num chars in summary").
+      if (!(h in fieldMap)) return [h, existing[h] ?? ""];
+      const next = fieldMap[h];
+      // Keep prior value when the form sends a blank for a non-editable catalog field.
+      if (next === "" && h === "Num chars in summary") return [h, existing[h] ?? ""];
+      return [h, next];
+    })
+  );
 
-  const out = [
-    ...prefix,
-    serializeCsvRow(headers),
-    ...updated.map((r) => serializeCsvRow(headers.map((h) => r[h] ?? ""))),
-  ];
-  const paperTitle = (String(data["Paper title"] || "submission").trim() || "submission");
-  return { text: `${out.join("\n")}\n`, paperTitle };
+  const term = rowTerminator(text, target.end, eol);
+  const replacement = `${serializeCsvRow(headers.map((h) => merged[h] ?? ""))}${term}`;
+  const out = `${text.slice(0, target.start)}${replacement}${text.slice(target.end)}`;
+
+  const paperTitle =
+    (merged["Paper title"] || String(data["Paper title"] || "submission")).trim() || "submission";
+  return { text: out, paperTitle };
 }
 
 export function appendModelsCsv(
@@ -265,8 +390,8 @@ export function appendModelsCsv(
   if (!newModels?.length) return { text: csvText, added: [] };
 
   let text = csvText || "";
-  if (text && !text.endsWith("\n")) text += "\n";
-  if (!text.trim()) text = "model,family,openness,release_date,link\n";
+  const eol = detectEol(text) || "\n";
+  if (!text.trim()) text = `model,family,openness,release_date,link${eol}`;
 
   const { headers, rows } = parseCsvRecords(text);
   const fieldnames = headers.length
@@ -277,28 +402,31 @@ export function appendModelsCsv(
   );
 
   const added: string[] = [];
-  const extraRows: Record<string, string>[] = [];
+  const extraLines: string[] = [];
 
   for (const item of newModels) {
     if (!item || typeof item !== "object") continue;
     const rec = item as Record<string, unknown>;
     const model = String(rec.model || "").trim();
     if (!model || existing.has(model.toLowerCase())) continue;
-    extraRows.push({
+    const row = {
       model,
       family: String(rec.family || "").trim(),
       openness: String(rec.openness || "").trim(),
       release_date: String(rec.release_date || "").trim(),
       link: String(rec.link || "").trim(),
-    });
+    };
+    extraLines.push(serializeCsvRow(fieldnames.map((h) => row[h as keyof typeof row] ?? "")));
     existing.add(model.toLowerCase());
     added.push(model);
   }
 
   if (!added.length) return { text: csvText, added: [] };
 
-  const allRows = [...rows, ...extraRows];
-  return { text: serializeCsv(fieldnames, allRows), added };
+  let out = text;
+  if (out && !out.endsWith("\n")) out += eol;
+  out += extraLines.map((line) => `${line}${eol}`).join("");
+  return { text: out, added };
 }
 
 export function appendKeywordsCsv(
@@ -308,8 +436,8 @@ export function appendKeywordsCsv(
   if (!newKeywords?.length) return { text: csvText, added: [] };
 
   let text = csvText || "";
-  if (text && !text.endsWith("\n")) text += "\n";
-  if (!text.trim()) text = "Category,Keyword\n";
+  const eol = detectEol(text) || "\n";
+  if (!text.trim()) text = `Category,Keyword${eol}`;
 
   const { headers, rows } = parseCsvRecords(text);
   const fieldnames = headers.length ? headers : ["Category", "Keyword"];
@@ -318,7 +446,7 @@ export function appendKeywordsCsv(
   );
 
   const added: string[] = [];
-  const extraRows: Record<string, string>[] = [];
+  const extraLines: string[] = [];
 
   for (const item of newKeywords) {
     if (!item || typeof item !== "object") continue;
@@ -326,13 +454,16 @@ export function appendKeywordsCsv(
     const keyword = String(rec.keyword || "").trim();
     const category = String(rec.category || "").trim();
     if (!keyword || !category || existing.has(keyword.toLowerCase())) continue;
-    extraRows.push({ Category: category, Keyword: keyword });
+    const row = { Category: category, Keyword: keyword };
+    extraLines.push(serializeCsvRow(fieldnames.map((h) => row[h as keyof typeof row] ?? "")));
     existing.add(keyword.toLowerCase());
     added.push(keyword);
   }
 
   if (!added.length) return { text: csvText, added: [] };
 
-  const allRows = [...rows, ...extraRows];
-  return { text: serializeCsv(fieldnames, allRows), added };
+  let out = text;
+  if (out && !out.endsWith("\n")) out += eol;
+  out += extraLines.map((line) => `${line}${eol}`).join("");
+  return { text: out, added };
 }
