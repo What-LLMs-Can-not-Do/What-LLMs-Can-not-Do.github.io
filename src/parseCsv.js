@@ -722,22 +722,66 @@ export function sortKeywords(keywords, byKeyword) {
   });
 }
 
-export function sortModelsByReleaseDate(models, releaseDates) {
-  const lookupDate = (name) =>
+export function lookupModelReleaseDate(name, releaseDates) {
+  if (!name || !releaseDates) return "";
+  return (
     releaseDates.get(name) ??
     releaseDates.get(name.toLowerCase()) ??
     releaseDates.get(canonicalizeModelName(name)) ??
     releaseDates.get(modelIdentityKey(name)) ??
-    "";
+    ""
+  );
+}
 
+export function sortModelsByReleaseDate(models, releaseDates) {
   return [...models].sort((a, b) => {
-    const dateA = lookupDate(a);
-    const dateB = lookupDate(b);
+    const dateA = lookupModelReleaseDate(a, releaseDates);
+    const dateB = lookupModelReleaseDate(b, releaseDates);
     if (dateA && dateB) return dateB.localeCompare(dateA);
     if (dateA) return -1;
     if (dateB) return 1;
     return canonicalizeModelName(a).localeCompare(canonicalizeModelName(b));
   });
+}
+
+/** Latest release_date among models listed in a paper's Model(s) tested cell. */
+export function latestModelReleaseDate(modelsValue, releaseDates) {
+  let latest = "";
+  for (const name of splitModels(modelsValue)) {
+    const date = lookupModelReleaseDate(name, releaseDates);
+    if (date && (!latest || date > latest)) latest = date;
+  }
+  return latest;
+}
+
+const MONTH_ABBREV = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/** Format YYYY-MM-DD (or YYYY-MM / YYYY) as e.g. "Jan 1, 2024". */
+export function formatReleaseDateDisplay(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const match = raw.match(/^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$/);
+  if (!match) return raw;
+  const year = match[1];
+  const month = match[2] ? Number(match[2]) : null;
+  const day = match[3] ? Number(match[3]) : null;
+  if (!month || month < 1 || month > 12) return year;
+  const monthLabel = MONTH_ABBREV[month - 1];
+  if (!day) return `${monthLabel} ${year}`;
+  return `${monthLabel} ${day}, ${year}`;
 }
 
 export function displayHeaders(headers) {
@@ -750,6 +794,7 @@ export function defaultColumnVisibility(headers) {
       displayHeaders(headers).map((header) => [header, !HIDDEN_COLUMNS.has(header)])
     ),
     Links: true,
+    "Latest model release": true,
   };
 }
 

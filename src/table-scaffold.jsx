@@ -13,6 +13,8 @@ import {
   defaultColumnVisibility,
   displayHeaders,
   isWhoIsBetterColumn,
+  formatReleaseDateDisplay,
+  latestModelReleaseDate,
   parseAudioCell,
   groupKeywordsByCategory,
   parseKeywords,
@@ -60,7 +62,10 @@ const NARROW_COLUMNS = new Set([
   "ID",
   "Language(s)",
   "Model(s) tested",
+  "Latest model release",
 ]);
+
+const LATEST_MODEL_RELEASE_COLUMN = "Latest model release";
 
 const WHO_IS_BETTER_LEAF_COLUMNS = new Set([
   "Closed",
@@ -985,6 +990,33 @@ function linksColumn() {
   };
 }
 
+function latestModelReleaseColumn(ctx) {
+  return {
+    id: LATEST_MODEL_RELEASE_COLUMN,
+    header: (
+      <>
+        Latest model
+        <br />
+        release
+      </>
+    ),
+    accessorFn: (row) =>
+      latestModelReleaseDate(row["Model(s) tested"], ctx.releaseDates),
+    cell: ({ getValue }) => {
+      const value = getValue();
+      return value ? formatReleaseDateDisplay(value) : "—";
+    },
+    sortingFn: (rowA, rowB, columnId) => {
+      const a = rowA.getValue(columnId) || "";
+      const b = rowB.getValue(columnId) || "";
+      if (a && b) return a.localeCompare(b);
+      if (a) return -1;
+      if (b) return 1;
+      return 0;
+    },
+  };
+}
+
 function buildColumns(headers, ctx) {
   const whoIsBetterHeaders = headers.filter(isWhoIsBetterColumn);
   const withoutLinks = headers.filter(
@@ -993,7 +1025,8 @@ function buildColumns(headers, ctx) {
       header !== "Paper Link" &&
       header !== "Dataset Link" &&
       header !== "Other Links" &&
-      header !== "Links"
+      header !== "Links" &&
+      header !== LATEST_MODEL_RELEASE_COLUMN
   );
   const paperIndex = withoutLinks.indexOf("Paper title");
   const ordered =
@@ -1004,12 +1037,27 @@ function buildColumns(headers, ctx) {
           "Links",
           ...withoutLinks.slice(paperIndex + 1),
         ];
+
+  const yearIdx = ordered.indexOf("Year of publication");
+  const modelIdx = ordered.indexOf("Model(s) tested");
+  const insertAt =
+    yearIdx !== -1
+      ? yearIdx + 1
+      : modelIdx !== -1
+        ? modelIdx + 1
+        : ordered.indexOf("Links") + 1;
+  ordered.splice(Math.max(insertAt, 0), 0, LATEST_MODEL_RELEASE_COLUMN);
+
   const columns = [];
   let grouped = false;
 
   for (const header of ordered) {
     if (header === "Links") {
       columns.push(linksColumn());
+      continue;
+    }
+    if (header === LATEST_MODEL_RELEASE_COLUMN) {
+      columns.push(latestModelReleaseColumn(ctx));
       continue;
     }
     if (isWhoIsBetterColumn(header)) {
