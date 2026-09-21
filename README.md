@@ -6,7 +6,7 @@ A living survey of benchmarks that compare large language models with humans.
 
 ## Contribute form API
 
-The site’s Contribute page posts to a Cloudflare Worker that edits the catalog CSVs (and optional audio) and opens a review PR. See [workers/contribute/README.md](workers/contribute/README.md) for deploy and secrets.
+The site’s Contribute page requires **Sign in with GitHub**, then posts to a Cloudflare Worker that edits the catalog CSVs (and optional audio) and opens a review PR **as that GitHub user**. See [workers/contribute/README.md](workers/contribute/README.md) for OAuth App setup, deploy, and secrets.
 
 After deploying the worker, set the GitHub Actions **repository variable** `VITE_CONTRIBUTE_API_URL` to the worker origin with no trailing path (for example `https://wlcd-contribute.<account>.workers.dev`). It must be a full `https://…` URL — not a local filesystem path. Locally:
 

@@ -4,5 +4,11 @@ compatibility_date = "2024-09-23"
 
 [vars]
 GITHUB_REPO = "What-LLMs-Can-not-Do/What-LLMs-Can-not-Do.github.io"
-ALLOWED_ORIGINS = "https://what-llms-can-not-do.github.io,http://localhost:5173"
-# Set via: wrangler secret put GITHUB_TOKEN
+ALLOWED_ORIGINS = "https://what-llms-can-not-do.github.io,http://localhost:5173,http://127.0.0.1:5173"
+# Public OAuth App client id (or set via secret). Replace after creating the OAuth App.
+# GITHUB_CLIENT_ID = "Ov23liXXXXXXXX"
+# Secrets (wrangler secret put):
+#   GITHUB_CLIENT_SECRET
+#   SESSION_SECRET
+# Optional legacy bot token (no longer used for PR authorship):
+#   GITHUB_TOKEN

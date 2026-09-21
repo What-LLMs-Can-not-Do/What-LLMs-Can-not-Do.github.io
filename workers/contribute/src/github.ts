@@ -1,5 +1,9 @@
 export type Env = {
-  GITHUB_TOKEN: string;
+  /** Optional bot token (unused for PR authorship; kept for compatibility). */
+  GITHUB_TOKEN?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  SESSION_SECRET?: string;
   GITHUB_REPO?: string;
   ALLOWED_ORIGINS?: string;
 };
@@ -118,27 +122,123 @@ export type TreeFile =
   | { path: string; content: string; encoding: "utf-8" }
   | { path: string; content: Uint8Array; encoding: "binary" };
 
+export type GhUser = {
+  login: string;
+  name: string | null;
+  avatar_url: string;
+};
+
+export async function getAuthenticatedUser(token: string): Promise<GhUser> {
+  return ghJson<GhUser>(token, "/user");
+}
+
+export async function exchangeOAuthCode(options: {
+  clientId: string;
+  clientSecret: string;
+  code: string;
+  redirectUri: string;
+}): Promise<string> {
+  const res = await fetch("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "wlcd-contribute-worker",
+    },
+    body: JSON.stringify({
+      client_id: options.clientId,
+      client_secret: options.clientSecret,
+      code: options.code,
+      redirect_uri: options.redirectUri,
+    }),
+  });
+  const data = (await res.json()) as {
+    access_token?: string;
+    error?: string;
+    error_description?: string;
+  };
+  if (!res.ok || !data.access_token) {
+    throw new Error(
+      data.error_description || data.error || `OAuth token exchange failed (${res.status})`
+    );
+  }
+  return data.access_token;
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Prefer pushing to upstream when the user has write access; otherwise use their fork. */
+export async function resolveContributionHead(
+  token: string,
+  upstreamRepo: string,
+  login: string
+): Promise<{ headRepo: string; prHeadPrefix: string }> {
+  const repoInfo = await ghJson<{
+    permissions?: { push?: boolean };
+    name: string;
+  }>(token, `/repos/${upstreamRepo}`);
+
+  if (repoInfo.permissions?.push) {
+    return { headRepo: upstreamRepo, prHeadPrefix: "" };
+  }
+
+  const repoName = repoInfo.name || upstreamRepo.split("/")[1];
+  const forkFullName = `${login}/${repoName}`;
+
+  const existing = await gh(token, `/repos/${forkFullName}`);
+  if (existing.status === 404) {
+    await ghJson(token, `/repos/${upstreamRepo}/forks`, {
+      method: "POST",
+      body: JSON.stringify({ default_branch_only: false }),
+    });
+  } else if (!existing.ok) {
+    const text = await existing.text();
+    throw new Error(`GitHub API ${existing.status}: ${text.trim().slice(0, 200)}`);
+  }
+
+  for (let i = 0; i < 45; i++) {
+    const check = await gh(token, `/repos/${forkFullName}`);
+    if (check.ok) {
+      return { headRepo: forkFullName, prHeadPrefix: `${login}:` };
+    }
+    await sleep(1000);
+  }
+  throw new Error(`Timed out waiting for fork ${forkFullName} to become ready`);
+}
+
 export async function createBranchCommitPr(options: {
   token: string;
+  /** Upstream repo that receives the pull request. */
   repo: string;
+  /** Repo to push the branch to (upstream or the submitter's fork). */
+  headRepo?: string;
+  /** When pushing to a fork, PR head is `${login}:${branch}`; otherwise just the branch name. */
+  prHeadPrefix?: string;
   baseBranch?: string;
   branchName: string;
   commitMessage: string;
   prTitle: string;
   prBody: string;
   files: TreeFile[];
+  author?: { name: string; email: string };
 }): Promise<{ prUrl: string; prNumber: number }> {
   const {
     token,
     repo,
+    headRepo = repo,
+    prHeadPrefix = "",
     baseBranch = "main",
     branchName,
     commitMessage,
     prTitle,
     prBody,
     files,
+    author,
   } = options;
 
+  // Base the contribution on upstream main even when pushing to a fork.
   const ref = await ghJson<{ object: { sha: string } }>(
     token,
     `/repos/${repo}/git/ref/heads/${baseBranch}`
@@ -159,7 +259,7 @@ export async function createBranchCommitPr(options: {
         ? textToBase64(file.content)
         : toBase64(file.content);
 
-    const blob = await ghJson<{ sha: string }>(token, `/repos/${repo}/git/blobs`, {
+    const blob = await ghJson<{ sha: string }>(token, `/repos/${headRepo}/git/blobs`, {
       method: "POST",
       body: JSON.stringify({ content: contentB64, encoding: "base64" }),
     });
@@ -172,21 +272,27 @@ export async function createBranchCommitPr(options: {
     });
   }
 
-  const tree = await ghJson<{ sha: string }>(token, `/repos/${repo}/git/trees`, {
+  const tree = await ghJson<{ sha: string }>(token, `/repos/${headRepo}/git/trees`, {
     method: "POST",
     body: JSON.stringify({ base_tree: baseTreeSha, tree: treeItems }),
   });
 
-  const newCommit = await ghJson<{ sha: string }>(token, `/repos/${repo}/git/commits`, {
+  const commitBody: Record<string, unknown> = {
+    message: commitMessage,
+    tree: tree.sha,
+    parents: [baseSha],
+  };
+  if (author) {
+    commitBody.author = author;
+    commitBody.committer = author;
+  }
+
+  const newCommit = await ghJson<{ sha: string }>(token, `/repos/${headRepo}/git/commits`, {
     method: "POST",
-    body: JSON.stringify({
-      message: commitMessage,
-      tree: tree.sha,
-      parents: [baseSha],
-    }),
+    body: JSON.stringify(commitBody),
   });
 
-  await ghJson(token, `/repos/${repo}/git/refs`, {
+  await ghJson(token, `/repos/${headRepo}/git/refs`, {
     method: "POST",
     body: JSON.stringify({
       ref: `refs/heads/${branchName}`,
@@ -198,9 +304,10 @@ export async function createBranchCommitPr(options: {
     method: "POST",
     body: JSON.stringify({
       title: prTitle,
-      head: branchName,
+      head: `${prHeadPrefix}${branchName}`,
       base: baseBranch,
       body: prBody,
+      maintainer_can_modify: true,
     }),
   });
 
