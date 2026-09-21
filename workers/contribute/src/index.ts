@@ -291,33 +291,56 @@ export default {
 
       let paperTitle: string;
       let dataCsvText: string;
+      let rowChanged = true;
       if (isChange) {
         const rowId = String(data.ID ?? "").trim();
         const updated = updateDataCsv(dataFile.content, rowId, data);
         dataCsvText = updated.text;
         paperTitle = updated.paperTitle;
+        rowChanged = updated.changed;
       } else {
         const appended = appendDataCsv(dataFile.content, data);
         dataCsvText = appended.text;
         paperTitle = appended.paperTitle;
       }
 
-      const files: TreeFile[] = [{ path: "public/data.csv", content: dataCsvText, encoding: "utf-8" }];
-
       const modelsFile = await getFileContent(userToken, repo, "public/models.csv", baseRef);
       const modelsResult = appendModelsCsv(
         modelsFile?.content ?? "",
         (data.new_models as unknown[]) || []
       );
-      if (modelsResult.added.length) {
-        files.push({ path: "public/models.csv", content: modelsResult.text, encoding: "utf-8" });
-      }
 
       const keywordsFile = await getFileContent(userToken, repo, "public/keywords.csv", baseRef);
       const keywordsResult = appendKeywordsCsv(
         keywordsFile?.content ?? "",
         (data.new_keywords as unknown[]) || []
       );
+
+      if (
+        isChange &&
+        !rowChanged &&
+        !modelsResult.added.length &&
+        !keywordsResult.added.length &&
+        !audioEntries.length
+      ) {
+        return jsonResponse(
+          {
+            error:
+              "No changes detected. Edit at least one field (or add models, keywords, or audio) before submitting.",
+          },
+          400,
+          origin,
+          allowed
+        );
+      }
+
+      const files: TreeFile[] = [];
+      if (!isChange || rowChanged) {
+        files.push({ path: "public/data.csv", content: dataCsvText, encoding: "utf-8" });
+      }
+      if (modelsResult.added.length) {
+        files.push({ path: "public/models.csv", content: modelsResult.text, encoding: "utf-8" });
+      }
       if (keywordsResult.added.length) {
         files.push({
           path: "public/keywords.csv",

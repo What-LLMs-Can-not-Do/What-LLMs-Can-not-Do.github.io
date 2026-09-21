@@ -249,6 +249,39 @@ function emptyNewKeywordDetails() {
   return { category: "" };
 }
 
+function normalizeFormValue(value) {
+  return String(value ?? "")
+    .trim()
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]{2,}/g, " ");
+}
+
+function contributionFormEquals(a, b) {
+  const keys = [
+    "General category",
+    "Keywords",
+    "Paper title",
+    "License",
+    "Language(s)",
+    "Model(s) tested",
+    "Year of publication",
+    "Paper Link",
+    "Dataset Link",
+    "Other Links",
+    "Summary",
+    "Human benchmark?",
+    "Closed",
+    "Open-weight",
+    "Open-source",
+    "Benchmark Example",
+    "Abstract",
+    "Comments",
+  ];
+  return keys.every((key) => normalizeFormValue(a?.[key]) === normalizeFormValue(b?.[key]));
+}
+
 function buildContributionPayload(
   form,
   { mode = "addition", entryId = "", newModels = [], newKeywords = [] } = {}
@@ -603,8 +636,22 @@ export default function Contribute() {
         setError("Enter the table entry ID you want to change.");
         return;
       }
-      if (!findTableRowById(tableRows, id)) {
+      const existingRow = findTableRowById(tableRows, id);
+      if (!existingRow) {
         setError(entryLoadError || `No table entry with ID ${id}.`);
+        return;
+      }
+      const baseline = tableRowToContributionForm(existingRow);
+      const rowUnchanged = contributionFormEquals(form, baseline);
+      if (
+        rowUnchanged &&
+        unknownModels.length === 0 &&
+        unknownKeywords.length === 0 &&
+        audioFiles.length === 0
+      ) {
+        setError(
+          "No changes detected. Edit at least one field (or add models, keywords, or audio) before submitting."
+        );
         return;
       }
     }

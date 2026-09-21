@@ -363,24 +363,36 @@ export function updateDataCsv(
   }
 
   const fieldMap = fieldMapFromData(data, headers.includes("ID") ? rowId : "");
+  /** Catalog fields the Contribute form does not edit — keep existing when blank. */
+  const preserveIfBlank = new Set([
+    "ID",
+    "Num chars in summary",
+    "Subtopic/Keywords",
+    "Benchmark Audio",
+    "Link",
+  ]);
   const merged = Object.fromEntries(
     headers.map((h) => {
-      // Preserve cells the form does not own (e.g. "Num chars in summary").
       if (!(h in fieldMap)) return [h, existing[h] ?? ""];
       const next = fieldMap[h];
-      // Keep prior value when the form sends a blank for a non-editable catalog field.
-      if (next === "" && h === "Num chars in summary") return [h, existing[h] ?? ""];
+      if (next === "" && preserveIfBlank.has(h)) return [h, existing[h] ?? ""];
       return [h, next];
     })
   );
+
+  const rowChanged = headers.some((h) => (merged[h] ?? "") !== (existing[h] ?? ""));
+  const paperTitle =
+    (merged["Paper title"] || String(data["Paper title"] || "submission")).trim() || "submission";
+
+  if (!rowChanged) {
+    return { text: csvText, paperTitle, changed: false };
+  }
 
   const term = rowTerminator(text, target.end, eol);
   const replacement = `${serializeCsvRow(headers.map((h) => merged[h] ?? ""))}${term}`;
   const out = `${text.slice(0, target.start)}${replacement}${text.slice(target.end)}`;
 
-  const paperTitle =
-    (merged["Paper title"] || String(data["Paper title"] || "submission")).trim() || "submission";
-  return { text: out, paperTitle };
+  return { text: out, paperTitle, changed: true };
 }
 
 export function appendModelsCsv(

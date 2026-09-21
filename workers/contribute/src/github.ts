@@ -45,7 +45,17 @@ async function ghJson<T = GhJson>(
       data && typeof data === "object" && data !== null && "message" in data
         ? String((data as { message: unknown }).message)
         : res.statusText;
-    throw new Error(`GitHub API ${res.status}: ${msg}`);
+    let detail = `GitHub API ${res.status}: ${msg}`;
+    if (
+      res.status === 403 &&
+      /resource not accessible|oauthapp|oauth app|organization/i.test(msg)
+    ) {
+      detail +=
+        " — An org owner must approve this OAuth App under " +
+        "https://github.com/organizations/What-LLMs-Can-not-Do/settings/oauth_application_policy " +
+        "(Third-party access → OAuth app policy), then sign out and sign in again on Contribute.";
+    }
+    throw new Error(detail);
   }
   return data as T;
 }

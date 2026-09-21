@@ -15,6 +15,16 @@ Submitters must **Sign in with GitHub** on the Contribute page. The worker uses 
 
 Scopes requested by the worker: `public_repo` and `read:user`.
 
+### Organization access (required)
+
+The site repo is under the **What-LLMs-Can-not-Do** org. Org OAuth restrictions block unapproved apps from creating branches/PRs (HTTP 403), even on a public repo.
+
+An org owner must approve the OAuth App:
+
+1. Open [OAuth app policy](https://github.com/organizations/What-LLMs-Can-not-Do/settings/oauth_application_policy)
+2. Approve **WLCD Contribute** (or whatever you named the app), or transfer/create the OAuth App **under the organization** so it is trusted automatically
+3. On the Contribute page: Sign out → Sign in with GitHub again (re-authorize if GitHub prompts for org access)
+
 ### 2. Worker secrets and deploy
 
 ```bash
