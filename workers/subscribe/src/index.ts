@@ -440,9 +440,7 @@ export default {
       const site = siteOrigin(env);
 
       const subject =
-        topic === "additions"
-          ? `WLCD: New table addition — ${title}`
-          : `WLCD: Table change — ${title}`;
+        topic === "additions" ? `[Addition] ${title}` : `[Change] ${title}`;
 
       const lines = [
         topic === "additions"
