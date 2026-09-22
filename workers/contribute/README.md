@@ -9,7 +9,7 @@ Submitters must **Sign in with GitHub** on the Contribute page. The worker uses 
 ### 1. GitHub OAuth App
 
 1. Create an OAuth App under the org or your user: [Developer settings → OAuth Apps](https://github.com/settings/developers).
-2. Homepage URL: `https://what-llms-can-not-do.github.io/`
+2. Homepage URL: `https://what-llms-can-not-do.org/`
 3. Authorization callback URL: `https://wlcd-contribute.<account>.workers.dev/auth/callback` (your worker origin + `/auth/callback`).
 4. Copy the **Client ID**. Generate a **Client secret**.
 

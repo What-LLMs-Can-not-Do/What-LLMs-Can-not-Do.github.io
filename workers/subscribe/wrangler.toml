@@ -10,8 +10,8 @@ database_name = "wlcd-subscribers"
 database_id = "0bc85b3d-2e64-485d-8952-20d2ffe1ba36"
 
 [vars]
-ALLOWED_ORIGINS = "https://what-llms-can-not-do.github.io,http://localhost:5173,http://127.0.0.1:5173"
-SITE_ORIGIN = "https://what-llms-can-not-do.github.io"
+ALLOWED_ORIGINS = "https://what-llms-can-not-do.org,https://www.what-llms-can-not-do.org,https://what-llms-can-not-do.github.io,http://localhost:5173,http://127.0.0.1:5173"
+SITE_ORIGIN = "https://what-llms-can-not-do.org"
 # FROM_EMAIL must be on a Resend-verified domain, e.g. "WLCD <updates@yourdomain.org>"
 # Secrets (wrangler secret put):
 #   RESEND_API_KEY

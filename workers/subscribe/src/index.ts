@@ -50,7 +50,7 @@ function isAllowedOrigin(origin: string, allowed: string[]): boolean {
 }
 
 function siteOrigin(env: Env): string {
-  return (env.SITE_ORIGIN || "https://what-llms-can-not-do.github.io").replace(/\/$/, "");
+  return (env.SITE_ORIGIN || "https://what-llms-can-not-do.org").replace(/\/$/, "");
 }
 
 function logoUrl(env: Env): string {

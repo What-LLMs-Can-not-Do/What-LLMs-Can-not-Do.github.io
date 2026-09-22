@@ -4,7 +4,8 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  // User/org Pages URL: https://what-llms-can-not-do.github.io/
+  // Custom domain: https://what-llms-can-not-do.org/
+  // (github.io redirects once Pages custom domain is configured)
   base: "/",
   plugins: [react(), tailwindcss()],
   server: {

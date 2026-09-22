@@ -156,7 +156,7 @@ export default {
           allowed
         );
       }
-      const returnTo = url.searchParams.get("return_to") || "https://what-llms-can-not-do.github.io/contribute";
+      const returnTo = url.searchParams.get("return_to") || "https://what-llms-can-not-do.org/contribute";
       if (!isAllowedReturnTo(returnTo, allowed)) {
         return jsonResponse({ error: "Invalid return_to URL" }, 400, origin, allowed);
       }

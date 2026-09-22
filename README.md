@@ -2,7 +2,38 @@
 
 A living survey of benchmarks that compare large language models with humans.
 
-**Website:** [https://what-llms-can-not-do.github.io/](https://what-llms-can-not-do.github.io/)
+**Website:** [https://what-llms-can-not-do.org/](https://what-llms-can-not-do.org/)
+
+## Custom domain (GitHub Pages + Cloudflare)
+
+The site is served on **`https://what-llms-can-not-do.org`**. GitHub Pages automatically redirects `https://what-llms-can-not-do.github.io` to that domain once the custom domain is configured.
+
+### 1. Cloudflare DNS (DNS only / grey cloud)
+
+| Type | Name | Content |
+| --- | --- | --- |
+| A | `@` | `185.199.108.153` |
+| A | `@` | `185.199.109.153` |
+| A | `@` | `185.199.110.153` |
+| A | `@` | `185.199.111.153` |
+| AAAA | `@` | `2606:50c0:8000::153` |
+| AAAA | `@` | `2606:50c0:8001::153` |
+| AAAA | `@` | `2606:50c0:8002::153` |
+| AAAA | `@` | `2606:50c0:8003::153` |
+| CNAME | `www` | `what-llms-can-not-do.github.io` |
+
+Keep existing **Resend** email records (TXT / DKIM) as they are.
+
+### 2. GitHub Pages settings
+
+Repo → **Settings** → **Pages** → **Custom domain** → `what-llms-can-not-do.org` → Save. Wait for DNS check, then enable **Enforce HTTPS**.
+
+(`public/CNAME` in this repo keeps that setting on each deploy.)
+
+### 3. After cutover
+
+- Update Contribute OAuth App **Homepage URL** to `https://what-llms-can-not-do.org/`
+- Redeploy subscribe + contribute workers if you change `ALLOWED_ORIGINS` / `SITE_ORIGIN` in their `wrangler.toml`
 
 ## Contribute form API
 
