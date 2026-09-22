@@ -90,12 +90,13 @@ export function readCookie(request: Request, name = COOKIE_NAME): string | null 
 }
 
 export function setSessionCookie(sealed: string, maxAge = SESSION_TTL_SEC): string {
-  // SameSite=None so github.io can call workers.dev with credentials.
-  return `${COOKIE_NAME}=${encodeURIComponent(sealed)}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${maxAge}`;
+  // SameSite=None so github.io can call workers.dev with credentials when allowed.
+  // Partitioned (CHIPS) helps Chromium when third-party cookies are restricted.
+  return `${COOKIE_NAME}=${encodeURIComponent(sealed)}; Path=/; HttpOnly; Secure; SameSite=None; Partitioned; Max-Age=${maxAge}`;
 }
 
 export function clearSessionCookie(): string {
-  return `${COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=0`;
+  return `${COOKIE_NAME}=; Path=/; HttpOnly; Secure; SameSite=None; Partitioned; Max-Age=0`;
 }
 
 export async function sealOAuthState(

@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CONTRIBUTE_API_URL } from "./config.js";
 import {
+  clearStoredSession,
+  contributeFetch,
+  takeSessionFromUrl,
+} from "./contributeAuth.js";
+import {
   findTableRowById,
   groupKeywordsByCategory,
   KEYWORD_CATEGORY_ORDER,
@@ -348,8 +353,10 @@ export default function Contribute() {
       return undefined;
     }
     let cancelled = false;
+    // Capture ?wlcd_gh= from OAuth redirect before calling /auth/me.
+    takeSessionFromUrl();
     const endpoint = CONTRIBUTE_API_URL.replace(/\/$/, "") + "/auth/me";
-    fetch(endpoint, { credentials: "include" })
+    contributeFetch(endpoint)
       .then((response) => response.json().catch(() => ({})))
       .then((data) => {
         if (cancelled) return;
@@ -379,20 +386,27 @@ export default function Contribute() {
       setError("Contribute API URL is not configured.");
       return;
     }
-    const returnTo = window.location.href;
+    let cleanReturn = window.location.href;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("wlcd_gh");
+      cleanReturn = url.toString();
+    } catch {
+      // Keep current href.
+    }
     const loginUrl =
       CONTRIBUTE_API_URL.replace(/\/$/, "") +
       "/auth/login?return_to=" +
-      encodeURIComponent(returnTo);
+      encodeURIComponent(cleanReturn);
     window.location.assign(loginUrl);
   };
 
   const signOutGitHub = async () => {
     if (!CONTRIBUTE_API_URL) return;
+    clearStoredSession();
     try {
-      await fetch(CONTRIBUTE_API_URL.replace(/\/$/, "") + "/auth/logout", {
+      await contributeFetch(CONTRIBUTE_API_URL.replace(/\/$/, "") + "/auth/logout", {
         method: "POST",
-        credentials: "include",
       });
     } catch {
       // Ignore network errors; clear local session UI either way.
@@ -729,10 +743,9 @@ export default function Contribute() {
         throw new Error("Sign in with GitHub before submitting.");
       }
       const endpoint = CONTRIBUTE_API_URL.replace(/\/$/, "") + "/contribute";
-      const response = await fetch(endpoint, {
+      const response = await contributeFetch(endpoint, {
         method: "POST",
         body,
-        credentials: "include",
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {

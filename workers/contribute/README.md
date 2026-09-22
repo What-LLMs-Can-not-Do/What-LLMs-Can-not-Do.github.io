@@ -72,13 +72,13 @@ VITE_CONTRIBUTE_API_URL=http://127.0.0.1:8787 npm run dev
 ### Auth
 
 - `GET /auth/login?return_to=<https url>` — start GitHub OAuth
-- `GET /auth/callback` — OAuth redirect target; sets session cookie
-- `GET /auth/me` — `{ authenticated, login, name, avatar_url }` (credentials required)
-- `POST /auth/logout` — clear session cookie
+- `GET /auth/callback` — OAuth redirect target; sets session cookie and returns to the site with a `wlcd_gh` session param (for browsers that block third-party cookies)
+- `GET /auth/me` — `{ authenticated, login, name, avatar_url }` (send `Authorization: Bearer <session>` and/or credentials)
+- `POST /auth/logout` — clear session cookie (also clear `sessionStorage` on the client)
 
 ### Contribute
 
-`POST /contribute` (multipart, **credentials / session cookie required**):
+`POST /contribute` (multipart; **session required** via `Authorization: Bearer` and/or session cookie):
 
 - `payload` — JSON string (`contribution_type`, form fields, optional `new_models` / `new_keywords`, `ID` for changes)
 - `audio` — zero or more `.mp3`/`.wav` files (20 MB total cap)

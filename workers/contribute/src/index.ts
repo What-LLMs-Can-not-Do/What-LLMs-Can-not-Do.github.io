@@ -34,7 +34,7 @@ const OAUTH_SCOPES = "public_repo read:user";
 function corsHeaders(origin: string | null, allowed: string[]): HeadersInit {
   const headers: Record<string, string> = {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
     "Access-Control-Max-Age": "86400",
   };
   if (origin && allowed.includes(origin)) {
@@ -90,6 +90,17 @@ function isAllowedReturnTo(returnTo: string, allowedOrigins: string[]): boolean 
 
 async function loadSession(request: Request, env: Env) {
   if (!env.SESSION_SECRET) return null;
+
+  // Prefer Authorization Bearer (cross-site; avoids third-party cookie blocks).
+  const auth = request.headers.get("Authorization");
+  if (auth) {
+    const match = auth.match(/^Bearer\s+(\S+)/i);
+    if (match?.[1]) {
+      const fromHeader = await unsealSession(env.SESSION_SECRET, match[1]);
+      if (fromHeader) return fromHeader;
+    }
+  }
+
   const sealed = readCookie(request);
   if (!sealed) return null;
   return unsealSession(env.SESSION_SECRET, sealed);
@@ -187,10 +198,14 @@ export default {
         const user = await getAuthenticatedUser(accessToken);
         const session = sessionFromUser(accessToken, user);
         const sealed = await sealSession(env.SESSION_SECRET, session);
+        // Hand the sealed session back via query param so the github.io page can
+        // store it locally. Cookies alone fail in many browsers (third-party).
+        const dest = new URL(parsed.returnTo);
+        dest.searchParams.set("wlcd_gh", sealed);
         return new Response(null, {
           status: 302,
           headers: {
-            Location: parsed.returnTo,
+            Location: dest.toString(),
             "Set-Cookie": setSessionCookie(sealed),
           },
         });
