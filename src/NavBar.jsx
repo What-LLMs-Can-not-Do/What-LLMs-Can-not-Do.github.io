@@ -69,6 +69,9 @@ export default function NavBar() {
           <NavLink to="/contribute" className={linkClass}>
             Contribute
           </NavLink>
+          <NavLink to="/subscribe" className={linkClass}>
+            Subscribe
+          </NavLink>
         </nav>
       </div>
     </header>
