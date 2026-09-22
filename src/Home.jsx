@@ -45,12 +45,6 @@ export default function Home() {
           >
             Contribute
           </Link>
-          <Link
-            to="/subscribe"
-            className="inline-flex items-center rounded-md bg-[#1870E0] px-4 py-2 text-sm font-medium text-white hover:bg-[#1560C4]"
-          >
-            Subscribe
-          </Link>
         </div>
       </div>
 
