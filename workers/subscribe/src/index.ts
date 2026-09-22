@@ -355,6 +355,8 @@ export default {
         title?: string;
         summary?: string;
         pr_url?: string;
+        highlights?: { field?: string; value?: string }[];
+        field_changes?: { field?: string; before?: string; after?: string }[];
       };
       try {
         body = (await request.json()) as typeof body;
@@ -389,9 +391,30 @@ export default {
         "",
         title,
       ];
-      if (summary) {
+
+      const fieldChanges = Array.isArray(body.field_changes) ? body.field_changes : [];
+      const highlights = Array.isArray(body.highlights) ? body.highlights : [];
+
+      if (topic === "changes" && fieldChanges.length) {
+        lines.push("", "What changed:");
+        for (const change of fieldChanges) {
+          const field = String(change.field || "").trim() || "Field";
+          const before = String(change.before ?? "").trim() || "(empty)";
+          const after = String(change.after ?? "").trim() || "(empty)";
+          lines.push("", `• ${field}`, `  Before: ${before}`, `  After:  ${after}`);
+        }
+      } else if (topic === "additions" && highlights.length) {
+        lines.push("", "Entry details:");
+        for (const item of highlights) {
+          const field = String(item.field || "").trim();
+          const value = String(item.value || "").trim();
+          if (!field || !value) continue;
+          lines.push(`• ${field}: ${value}`);
+        }
+      } else if (summary) {
         lines.push("", summary);
       }
+
       lines.push("", `Browse the table: ${site}/table`);
       if (prUrl) lines.push(`Pull request: ${prUrl}`);
 
