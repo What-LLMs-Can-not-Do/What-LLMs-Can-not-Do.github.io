@@ -1,6 +1,7 @@
 import {
   confirmSubscription,
   getByEmail,
+  listAllSubscribers,
   listConfirmedForTopic,
   unsubscribeAll,
   upsertSubscription,
@@ -12,16 +13,16 @@ import {
   wrapHtml,
   type Env,
 } from "./email";
-import { normalizeTopics, type Topic } from "./topics";
+import { normalizeTopics, parseTopicsJson, type Topic } from "./topics";
 import { normalizeEmail, randomToken } from "./tokens";
 
 function corsHeaders(origin: string | null, allowed: string[]): HeadersInit {
   const headers: Record<string, string> = {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Notify-Secret",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Notify-Secret, X-Admin-Password",
     "Access-Control-Max-Age": "86400",
   };
-  if (origin && allowed.includes(origin)) {
+  if (origin && isAllowedOrigin(origin, allowed)) {
     headers["Access-Control-Allow-Origin"] = origin;
     headers.Vary = "Origin";
   }
@@ -33,6 +34,18 @@ function parseAllowedOrigins(raw: string | undefined): string[] {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+/** Exact allowlist match, plus any localhost / 127.0.0.1 port for local Vite. */
+function isAllowedOrigin(origin: string, allowed: string[]): boolean {
+  if (allowed.includes(origin)) return true;
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+    return url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  } catch {
+    return false;
+  }
 }
 
 function siteOrigin(env: Env): string {
@@ -59,6 +72,15 @@ function requireNotifySecret(request: Request, env: Env): boolean {
   if (!expected) return false;
   const header =
     request.headers.get("X-Notify-Secret") ||
+    request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
+  return Boolean(header && header === expected);
+}
+
+function requireAdminPassword(request: Request, env: Env): boolean {
+  const expected = env.ADMIN_PASSWORD?.trim();
+  if (!expected) return false;
+  const header =
+    request.headers.get("X-Admin-Password") ||
     request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
   return Boolean(header && header === expected);
 }
@@ -152,7 +174,7 @@ export default {
     const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
-      if (origin && !allowed.includes(origin)) {
+      if (origin && !isAllowedOrigin(origin, allowed)) {
         return new Response(null, { status: 403 });
       }
       return new Response(null, { status: 204, headers: corsHeaders(origin, allowed) });
@@ -163,7 +185,7 @@ export default {
     }
 
     if (request.method === "POST" && url.pathname === "/subscribe") {
-      if (origin && !allowed.includes(origin)) {
+      if (origin && !isAllowedOrigin(origin, allowed)) {
         return jsonResponse({ error: "Origin not allowed" }, 403, origin, allowed);
       }
       if (!env.RESEND_API_KEY || !env.FROM_EMAIL) {
@@ -359,6 +381,38 @@ export default {
       const text = `${newsBody}\n\n—\nWhat LLMs Can(not) Do\n${site}`;
       const result = await broadcast(env, url, "news", subject, text);
       return jsonResponse({ ok: true, topic: "news", ...result }, 200, origin, allowed);
+    }
+
+    if (request.method === "GET" && url.pathname === "/admin/subscribers") {
+      if (origin && !isAllowedOrigin(origin, allowed)) {
+        return jsonResponse({ error: "Origin not allowed" }, 403, origin, allowed);
+      }
+      if (!env.ADMIN_PASSWORD?.trim()) {
+        return jsonResponse(
+          { error: "Server misconfigured: missing ADMIN_PASSWORD" },
+          500,
+          origin,
+          allowed
+        );
+      }
+      if (!requireAdminPassword(request, env)) {
+        return jsonResponse({ error: "Unauthorized" }, 401, origin, allowed);
+      }
+
+      const rows = await listAllSubscribers(env.DB);
+      const subscribers = rows.map((row) => ({
+        email: row.email,
+        topics: parseTopicsJson(row.topics_json),
+        confirmed: Boolean(row.confirmed),
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      }));
+      return jsonResponse(
+        { ok: true, count: subscribers.length, subscribers },
+        200,
+        origin,
+        allowed
+      );
     }
 
     return jsonResponse({ error: "Not found" }, 404, origin, allowed);

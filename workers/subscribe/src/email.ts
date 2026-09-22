@@ -3,6 +3,7 @@ export type Env = {
   RESEND_API_KEY: string;
   FROM_EMAIL: string;
   NOTIFY_SECRET: string;
+  ADMIN_PASSWORD?: string;
   TOKEN_SECRET?: string;
   ALLOWED_ORIGINS?: string;
   SITE_ORIGIN?: string;

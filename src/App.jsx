@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import Admin from "./Admin.jsx";
 import Analytics from "./Analytics.jsx";
 import Contribute from "./Contribute.jsx";
 import Home from "./Home.jsx";
@@ -18,6 +19,7 @@ function App() {
         <Route path="/table" element={<Table />} />
         <Route path="/contribute" element={<Contribute />} />
         <Route path="/subscribe" element={<Subscribe />} />
+        <Route path="/admin" element={<Admin />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

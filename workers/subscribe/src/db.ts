@@ -116,3 +116,16 @@ export async function listConfirmedForTopic(
     .all<SubscriberRow>();
   return (results || []).filter((row) => parseTopicsJson(row.topics_json).includes(topic));
 }
+
+export async function listAllSubscribers(db: D1Database): Promise<
+  Omit<SubscriberRow, "confirm_token" | "unsub_token">[]
+> {
+  const { results } = await db
+    .prepare(
+      `SELECT email, topics_json, confirmed, created_at, updated_at
+       FROM subscribers
+       ORDER BY created_at DESC`
+    )
+    .all<Omit<SubscriberRow, "confirm_token" | "unsub_token">>();
+  return results || [];
+}

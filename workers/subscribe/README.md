@@ -33,6 +33,7 @@ npm run db:migrate:remote
 npx wrangler secret put RESEND_API_KEY
 npx wrangler secret put FROM_EMAIL          # e.g. WLCD <updates@yourdomain.org>
 npx wrangler secret put NOTIFY_SECRET       # long random string for GitHub Actions
+npx wrangler secret put ADMIN_PASSWORD      # password for /admin subscriber list
 ```
 
 Optional: set `SITE_ORIGIN` / `ALLOWED_ORIGINS` in `wrangler.toml` `[vars]`.
@@ -58,6 +59,7 @@ Note the worker URL (e.g. `https://wlcd-subscribe.<account>.workers.dev`).
 | `POST` | `/subscribe` | CORS origin | `{ email, topics: ["news","additions","changes"] }` |
 | `GET` | `/confirm?token=` | — | Confirm subscription; redirects to site |
 | `GET` | `/unsubscribe?token=` | — | Unsubscribe; redirects to site |
+| `GET` | `/admin/subscribers` | `X-Admin-Password` | List subscribers for the site `/admin` page |
 | `POST` | `/notify` | `X-Notify-Secret` | `{ type: "additions"\|"changes", title, summary?, pr_url? }` |
 | `POST` | `/news` | `X-Notify-Secret` | `{ subject, body }` |
 

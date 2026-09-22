@@ -17,4 +17,5 @@ SITE_ORIGIN = "https://what-llms-can-not-do.github.io"
 #   RESEND_API_KEY
 #   FROM_EMAIL
 #   NOTIFY_SECRET
+#   ADMIN_PASSWORD
 #   TOKEN_SECRET

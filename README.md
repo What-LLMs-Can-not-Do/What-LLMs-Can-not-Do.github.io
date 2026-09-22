@@ -23,7 +23,8 @@ The **Subscribe** page lets people opt into News, table Additions, and/or table 
 Short version:
 
 1. Create a [Resend](https://resend.com) account, verify a sending domain, and create an API key.
-2. Create and migrate the D1 database, set worker secrets (`RESEND_API_KEY`, `FROM_EMAIL`, `NOTIFY_SECRET`), deploy `workers/subscribe`.
+2. Create and migrate the D1 database, set worker secrets (`RESEND_API_KEY`, `FROM_EMAIL`, `NOTIFY_SECRET`, `ADMIN_PASSWORD`), deploy `workers/subscribe`.
+3. Open `/admin` (not in the nav) with `ADMIN_PASSWORD` to list subscribers.
 3. Set repository **variables**:
    - `VITE_SUBSCRIBE_API_URL` — worker origin (Pages build)
    - `SUBSCRIBE_API_URL` — same worker origin (notify/news workflows)
