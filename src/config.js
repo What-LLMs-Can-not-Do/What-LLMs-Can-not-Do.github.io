@@ -36,9 +36,11 @@ export const CONTRIBUTE_API_URL = resolveContributeApiUrl(
 /**
  * Cloudflare Worker URL for email subscriptions.
  * Example: https://wlcd-subscribe.<account>.workers.dev
+ * Override with VITE_SUBSCRIBE_API_URL (GitHub Actions variable for Pages builds).
  */
 export const SUBSCRIBE_API_URL = resolveContributeApiUrl(
-  import.meta.env.VITE_SUBSCRIBE_API_URL
+  import.meta.env.VITE_SUBSCRIBE_API_URL ||
+    "https://wlcd-subscribe.ledman0.workers.dev"
 );
 
 /** GoatCounter site code (e.g. "wlcd" → https://wlcd.goatcounter.com). Empty disables analytics. */
