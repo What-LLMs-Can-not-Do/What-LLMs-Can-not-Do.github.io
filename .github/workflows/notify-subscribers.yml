@@ -5,6 +5,16 @@ on:
     branches: [main]
     paths:
       - "public/data.csv"
+  workflow_dispatch:
+    inputs:
+      before:
+        description: Optional git SHA before the change (default HEAD^)
+        required: false
+        type: string
+      after:
+        description: Optional git SHA after the change (default HEAD)
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -20,25 +30,30 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Classify data.csv changes
         id: classify
         shell: bash
         run: |
           set -euo pipefail
-          BEFORE="${{ github.event.before }}"
-          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
-            BEFORE="$(git rev-parse HEAD^)"
+          AFTER="${{ inputs.after }}"
+          BEFORE="${{ inputs.before }}"
+          if [ -z "$AFTER" ]; then
+            AFTER="${{ github.sha }}"
           fi
+          if [ -z "$BEFORE" ]; then
+            BEFORE="${{ github.event.before }}"
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              BEFORE="$(git rev-parse "${AFTER}^")"
+            fi
+          fi
+          echo "Comparing data.csv $BEFORE → $AFTER"
           python3 .github/scripts/classify_table_diff.py \
             --before "$BEFORE" \
-            --after "${{ github.sha }}" \
+            --after "$AFTER" \
             --pr-url "" \
             > /tmp/notify-events.json
-          echo "events<<EOF" >> "$GITHUB_OUTPUT"
-          cat /tmp/notify-events.json >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
           cat /tmp/notify-events.json
 
       - name: Send notify emails
@@ -49,34 +64,46 @@ jobs:
         run: |
           set -euo pipefail
           API="${SUBSCRIBE_API_URL%/}"
+          if [ -z "${SUBSCRIBE_API_URL:-}" ]; then
+            echo "::error::SUBSCRIBE_API_URL variable is empty."
+            exit 1
+          fi
+          if [ -z "${SUBSCRIBE_NOTIFY_SECRET:-}" ]; then
+            echo "::error::SUBSCRIBE_NOTIFY_SECRET is empty."
+            exit 1
+          fi
+          echo "API=$API"
+          echo "NOTIFY_SECRET length=${#SUBSCRIBE_NOTIFY_SECRET}"
           count="$(python3 -c 'import json; print(len(json.load(open("/tmp/notify-events.json"))["events"]))')"
           if [ "$count" = "0" ]; then
             echo "No titled-row additions/changes to notify about."
             exit 0
           fi
-          python3 <<'PY'
-          import json, os, urllib.error, urllib.request
-
-          api = os.environ["SUBSCRIBE_API_URL"].rstrip("/")
-          secret = os.environ["SUBSCRIBE_NOTIFY_SECRET"]
-          events = json.load(open("/tmp/notify-events.json"))["events"]
-
-          for event in events:
-              payload = json.dumps(event).encode("utf-8")
-              req = urllib.request.Request(
-                  f"{api}/notify",
-                  data=payload,
-                  headers={
-                      "Content-Type": "application/json",
-                      "X-Notify-Secret": secret,
-                  },
-                  method="POST",
-              )
-              try:
-                  with urllib.request.urlopen(req, timeout=120) as resp:
-                      body = resp.read().decode("utf-8", errors="replace")
-                      print(event["type"], event["title"][:80], "->", resp.status, body)
-              except urllib.error.HTTPError as err:
-                  detail = err.read().decode("utf-8", errors="replace")
-                  raise SystemExit(f"notify failed for {event}: {err.code} {detail}")
-          PY
+          echo "Sending $count event(s)…"
+          # Use curl — Cloudflare blocks Python-urllib from Actions (error 1010).
+          python3 -c 'import json; events=json.load(open("/tmp/notify-events.json"))["events"];
+[open(f"/tmp/notify-event-{i}.json","w").write(json.dumps(e)) for i,e in enumerate(events)];
+print(len(events))'
+          for f in /tmp/notify-event-*.json; do
+            echo "POST $f"
+            cat "$f"
+            echo
+            http_code="$(curl -sS -o /tmp/notify-response.json -w "%{http_code}" \
+              -X POST \
+              -H "Content-Type: application/json" \
+              -H "X-Notify-Secret: ${SUBSCRIBE_NOTIFY_SECRET}" \
+              -H "User-Agent: wlcd-notify-subscribers/1.0" \
+              --data-binary @"$f" \
+              "${API}/notify")"
+            echo "HTTP $http_code"
+            cat /tmp/notify-response.json
+            echo
+            if [ "$http_code" != "200" ]; then
+              if [ "$http_code" = "401" ]; then
+                echo "::error::401 Unauthorized — SUBSCRIBE_NOTIFY_SECRET does not match worker NOTIFY_SECRET."
+              elif [ "$http_code" = "403" ]; then
+                echo "::error::403 from Cloudflare/worker — check bot protection / URL."
+              fi
+              exit 1
+            fi
+          done

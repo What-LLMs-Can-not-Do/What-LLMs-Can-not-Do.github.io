@@ -60,6 +60,7 @@ Note the worker URL (e.g. `https://wlcd-subscribe.<account>.workers.dev`).
 | `GET` | `/confirm?token=` | — | Confirm subscription; redirects to site |
 | `GET` | `/unsubscribe?token=` | — | Unsubscribe; redirects to site |
 | `GET` | `/admin/subscribers` | `X-Admin-Password` | List subscribers for the site `/admin` page |
+| `POST` | `/admin/news` | `X-Admin-Password` | `{ subject, body }` — send news from `/admin` |
 | `POST` | `/notify` | `X-Notify-Secret` | `{ type: "additions"\|"changes", title, summary?, pr_url? }` |
 | `POST` | `/news` | `X-Notify-Secret` | `{ subject, body }` |
 

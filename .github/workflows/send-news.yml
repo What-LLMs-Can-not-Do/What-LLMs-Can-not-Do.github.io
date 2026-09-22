@@ -29,30 +29,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 <<'PY'
-          import json, os, urllib.error, urllib.request
-
-          api = os.environ["SUBSCRIBE_API_URL"].rstrip("/")
-          secret = os.environ["SUBSCRIBE_NOTIFY_SECRET"]
-          payload = json.dumps(
-              {
-                  "subject": os.environ["NEWS_SUBJECT"],
-                  "body": os.environ["NEWS_BODY"],
-              }
-          ).encode("utf-8")
-          req = urllib.request.Request(
-              f"{api}/news",
-              data=payload,
-              headers={
-                  "Content-Type": "application/json",
-                  "X-Notify-Secret": secret,
-              },
-              method="POST",
-          )
-          try:
-              with urllib.request.urlopen(req, timeout=120) as resp:
-                  print(resp.status, resp.read().decode("utf-8", errors="replace"))
-          except urllib.error.HTTPError as err:
-              detail = err.read().decode("utf-8", errors="replace")
-              raise SystemExit(f"news failed: {err.code} {detail}")
-          PY
+          API="${SUBSCRIBE_API_URL%/}"
+          if [ -z "${SUBSCRIBE_NOTIFY_SECRET:-}" ]; then
+            echo "::error::SUBSCRIBE_NOTIFY_SECRET is empty."
+            exit 1
+          fi
+          python3 -c 'import json,os; open("/tmp/news-payload.json","w").write(json.dumps({"subject":os.environ["NEWS_SUBJECT"],"body":os.environ["NEWS_BODY"]}))'
+          # Use curl — Cloudflare blocks Python-urllib from Actions (error 1010).
+          http_code="$(curl -sS -o /tmp/news-response.json -w "%{http_code}" \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -H "X-Notify-Secret: ${SUBSCRIBE_NOTIFY_SECRET}" \
+            -H "User-Agent: wlcd-send-news/1.0" \
+            --data-binary @/tmp/news-payload.json \
+            "${API}/news")"
+          echo "HTTP $http_code"
+          cat /tmp/news-response.json
+          echo
+          if [ "$http_code" != "200" ]; then
+            exit 1
+          fi

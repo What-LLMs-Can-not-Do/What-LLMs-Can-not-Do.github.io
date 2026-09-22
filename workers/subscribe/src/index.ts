@@ -7,6 +7,7 @@ import {
   upsertSubscription,
 } from "./db";
 import {
+  ctaButton,
   escapeHtml,
   sendEmail,
   textToHtmlParagraphs,
@@ -50,6 +51,10 @@ function isAllowedOrigin(origin: string, allowed: string[]): boolean {
 
 function siteOrigin(env: Env): string {
   return (env.SITE_ORIGIN || "https://what-llms-can-not-do.github.io").replace(/\/$/, "");
+}
+
+function logoUrl(env: Env): string {
+  return `${siteOrigin(env)}/logo_cropped.png`;
 }
 
 function jsonResponse(
@@ -112,10 +117,11 @@ async function sendConfirmEmail(
   ].join("\n");
   const html = wrapHtml(
     subject,
-    `<p>Confirm your subscription to <strong>What LLMs Can(not) Do</strong> updates:</p>
-     <p><a href="${escapeHtml(link)}">Confirm subscription</a></p>
-     <p>If you did not request this, you can ignore this email.</p>`,
-    `<a href="${escapeHtml(site)}">${escapeHtml(site)}</a>`
+    `<p style="margin: 0 0 1em; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #334155;">Confirm your subscription to <strong style="color: #0f172a;">What LLMs Can(not) Do</strong> updates.</p>
+     ${ctaButton(link, "Confirm subscription")}
+     <p style="margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; color: #64748b;">If you did not request this, you can ignore this email.</p>`,
+    `<a href="${escapeHtml(site)}" style="color: #64748b;">${escapeHtml(site)}</a>`,
+    { logoUrl: logoUrl(env), siteUrl: site }
   );
   await sendEmail({
     apiKey: env.RESEND_API_KEY,
@@ -133,22 +139,25 @@ async function broadcast(
   topic: Topic,
   subject: string,
   bodyText: string
-): Promise<{ sent: number; failed: number }> {
+): Promise<{ sent: number; failed: number; deliveries: { email: string; id: string }[] }> {
   const recipients = await listConfirmedForTopic(env.DB, topic);
   let sent = 0;
   let failed = 0;
+  const deliveries: { email: string; id: string }[] = [];
 
   for (const row of recipients) {
     const unsub = unsubUrl(env, requestUrl, row.unsub_token);
+    const site = siteOrigin(env);
     const text = `${bodyText}\n\n---\nUnsubscribe: ${unsub}\n`;
     const html = wrapHtml(
       subject,
       textToHtmlParagraphs(bodyText),
       `You received this because you subscribed to <strong>${escapeHtml(topic)}</strong>.
-       <a href="${escapeHtml(unsub)}">Unsubscribe</a>`
+       <a href="${escapeHtml(unsub)}" style="color: #64748b;">Unsubscribe</a>`,
+      { logoUrl: logoUrl(env), siteUrl: site }
     );
     try {
-      await sendEmail({
+      const { id } = await sendEmail({
         apiKey: env.RESEND_API_KEY,
         from: env.FROM_EMAIL,
         to: row.email,
@@ -158,13 +167,58 @@ async function broadcast(
         unsubscribeUrl: unsub,
       });
       sent++;
+      deliveries.push({ email: row.email, id });
+      console.log(`Resend accepted news/notify to ${row.email} id=${id}`);
     } catch (err) {
       failed++;
       console.error(`Failed to email ${row.email}:`, err);
     }
   }
 
-  return { sent, failed };
+  return { sent, failed, deliveries };
+}
+
+async function handleSendNews(
+  request: Request,
+  env: Env,
+  requestUrl: URL,
+  origin: string | null,
+  allowed: string[]
+): Promise<Response> {
+  if (!env.RESEND_API_KEY || !env.FROM_EMAIL) {
+    return jsonResponse(
+      { error: "Server misconfigured: missing Resend credentials" },
+      500,
+      origin,
+      allowed
+    );
+  }
+
+  let body: { subject?: string; body?: string };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return jsonResponse({ error: "Invalid JSON body" }, 400, origin, allowed);
+  }
+
+  const subjectRaw = String(body.subject || "").trim();
+  const newsBody = String(body.body || "").trim();
+  if (!subjectRaw || !newsBody) {
+    return jsonResponse(
+      { error: "subject and body are required" },
+      400,
+      origin,
+      allowed
+    );
+  }
+
+  const subject = subjectRaw.replace(/^\[News\]\s*/i, "");
+  const subjectLine = `[News] ${subject}`;
+
+  const site = siteOrigin(env);
+  const text = `${newsBody}\n\n—\nWhat LLMs Can(not) Do\n${site}`;
+  const result = await broadcast(env, requestUrl, "news", subjectLine, text);
+  return jsonResponse({ ok: true, topic: "news", subject: subjectLine, ...result }, 200, origin, allowed);
 }
 
 export default {
@@ -350,37 +404,7 @@ export default {
       if (!requireNotifySecret(request, env)) {
         return jsonResponse({ error: "Unauthorized" }, 401, origin, allowed);
       }
-      if (!env.RESEND_API_KEY || !env.FROM_EMAIL) {
-        return jsonResponse(
-          { error: "Server misconfigured: missing Resend credentials" },
-          500,
-          origin,
-          allowed
-        );
-      }
-
-      let body: { subject?: string; body?: string };
-      try {
-        body = (await request.json()) as typeof body;
-      } catch {
-        return jsonResponse({ error: "Invalid JSON body" }, 400, origin, allowed);
-      }
-
-      const subject = String(body.subject || "").trim();
-      const newsBody = String(body.body || "").trim();
-      if (!subject || !newsBody) {
-        return jsonResponse(
-          { error: "subject and body are required" },
-          400,
-          origin,
-          allowed
-        );
-      }
-
-      const site = siteOrigin(env);
-      const text = `${newsBody}\n\n—\nWhat LLMs Can(not) Do\n${site}`;
-      const result = await broadcast(env, url, "news", subject, text);
-      return jsonResponse({ ok: true, topic: "news", ...result }, 200, origin, allowed);
+      return handleSendNews(request, env, url, origin, allowed);
     }
 
     if (request.method === "GET" && url.pathname === "/admin/subscribers") {
@@ -413,6 +437,24 @@ export default {
         origin,
         allowed
       );
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/news") {
+      if (origin && !isAllowedOrigin(origin, allowed)) {
+        return jsonResponse({ error: "Origin not allowed" }, 403, origin, allowed);
+      }
+      if (!env.ADMIN_PASSWORD?.trim()) {
+        return jsonResponse(
+          { error: "Server misconfigured: missing ADMIN_PASSWORD" },
+          500,
+          origin,
+          allowed
+        );
+      }
+      if (!requireAdminPassword(request, env)) {
+        return jsonResponse({ error: "Unauthorized" }, 401, origin, allowed);
+      }
+      return handleSendNews(request, env, url, origin, allowed);
     }
 
     return jsonResponse({ error: "Not found" }, 404, origin, allowed);
