@@ -138,7 +138,8 @@ async function broadcast(
   requestUrl: URL,
   topic: Topic,
   subject: string,
-  bodyText: string
+  bodyText: string,
+  bodyHtml?: string
 ): Promise<{ sent: number; failed: number; deliveries: { email: string; id: string }[] }> {
   const recipients = await listConfirmedForTopic(env.DB, topic);
   let sent = 0;
@@ -151,7 +152,7 @@ async function broadcast(
     const text = `${bodyText}\n\n---\nUnsubscribe: ${unsub}\n`;
     const html = wrapHtml(
       subject,
-      textToHtmlParagraphs(bodyText),
+      bodyHtml || textToHtmlParagraphs(bodyText),
       `You received this because you subscribed to <strong>${escapeHtml(topic)}</strong>.
        <a href="${escapeHtml(unsub)}" style="color: #64748b;">Unsubscribe</a>`,
       { logoUrl: logoUrl(env), siteUrl: site }
@@ -176,6 +177,65 @@ async function broadcast(
   }
 
   return { sent, failed, deliveries };
+}
+
+function notifyIntroHtml(topic: Topic, title: string): string {
+  const intro =
+    topic === "additions"
+      ? "A new entry was added to the What LLMs Can(not) Do table."
+      : "An existing entry in the What LLMs Can(not) Do table was updated.";
+  return `<p style="margin: 0 0 1em; color: #334155;">${escapeHtml(intro)}</p>
+<p style="margin: 0 0 1em; font-size: 18px; font-weight: 600; color: #0f172a;">${escapeHtml(title)}</p>`;
+}
+
+function fieldChangeBlocksHtml(
+  fieldChanges: { field?: string; before?: string; after?: string }[]
+): string {
+  const blocks: string[] = [
+    `<p style="margin: 0 0 0.75em; font-weight: 600; color: #0f172a;">What changed</p>`,
+  ];
+  for (const change of fieldChanges) {
+    const field = String(change.field || "").trim() || "Field";
+    const before = String(change.before ?? "").trim() || "(empty)";
+    const after = String(change.after ?? "").trim() || "(empty)";
+    blocks.push(`<div style="margin: 0 0 1em; padding: 12px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+  <div style="margin: 0 0 8px; font-size: 13px; font-weight: 600; color: #0f172a;">${escapeHtml(field)}</div>
+  <div style="margin: 0 0 6px; padding: 8px 10px; background: #fef2f2; border-left: 3px solid #dc2626; color: #991b1b; font-size: 14px; line-height: 1.45;">
+    <span style="text-decoration: line-through;">${escapeHtml(before)}</span>
+  </div>
+  <div style="margin: 0; padding: 8px 10px; background: #f0fdf4; border-left: 3px solid #16a34a; color: #166534; font-size: 14px; line-height: 1.45;">
+    ${escapeHtml(after)}
+  </div>
+</div>`);
+  }
+  return blocks.join("\n");
+}
+
+function highlightsHtml(highlights: { field?: string; value?: string }[]): string {
+  const items: string[] = [];
+  for (const item of highlights) {
+    const field = String(item.field || "").trim();
+    const value = String(item.value || "").trim();
+    if (!field || !value) continue;
+    items.push(
+      `<li style="margin: 0 0 0.4em;"><strong style="color: #0f172a;">${escapeHtml(field)}:</strong> ${escapeHtml(value)}</li>`
+    );
+  }
+  if (!items.length) return "";
+  return `<p style="margin: 0 0 0.5em; font-weight: 600; color: #0f172a;">Entry details</p>
+<ul style="margin: 0 0 1em; padding-left: 1.2em; color: #334155;">${items.join("")}</ul>`;
+}
+
+function notifyFooterHtml(site: string, prUrl: string): string {
+  const parts = [
+    `<p style="margin: 0 0 0.5em;"><a href="${escapeHtml(site)}/table" style="color: #2563eb;">Browse the table</a></p>`,
+  ];
+  if (prUrl) {
+    parts.push(
+      `<p style="margin: 0;"><a href="${escapeHtml(prUrl)}" style="color: #2563eb;">View pull request</a></p>`
+    );
+  }
+  return parts.join("\n");
 }
 
 async function handleSendNews(
@@ -395,14 +455,17 @@ export default {
       const fieldChanges = Array.isArray(body.field_changes) ? body.field_changes : [];
       const highlights = Array.isArray(body.highlights) ? body.highlights : [];
 
+      const htmlParts = [notifyIntroHtml(topic, title)];
+
       if (topic === "changes" && fieldChanges.length) {
         lines.push("", "What changed:");
         for (const change of fieldChanges) {
           const field = String(change.field || "").trim() || "Field";
           const before = String(change.before ?? "").trim() || "(empty)";
           const after = String(change.after ?? "").trim() || "(empty)";
-          lines.push("", `• ${field}`, `  Before: ${before}`, `  After:  ${after}`);
+          lines.push("", `• ${field}`, `  − ${before}`, `  + ${after}`);
         }
+        htmlParts.push(fieldChangeBlocksHtml(fieldChanges));
       } else if (topic === "additions" && highlights.length) {
         lines.push("", "Entry details:");
         for (const item of highlights) {
@@ -411,15 +474,20 @@ export default {
           if (!field || !value) continue;
           lines.push(`• ${field}: ${value}`);
         }
+        htmlParts.push(highlightsHtml(highlights));
       } else if (summary) {
         lines.push("", summary);
+        htmlParts.push(
+          `<p style="margin: 0 0 1em; color: #334155;">${escapeHtml(summary)}</p>`
+        );
       }
 
       lines.push("", `Browse the table: ${site}/table`);
       if (prUrl) lines.push(`Pull request: ${prUrl}`);
+      htmlParts.push(notifyFooterHtml(site, prUrl));
 
       const bodyText = lines.join("\n");
-      const result = await broadcast(env, url, topic, subject, bodyText);
+      const result = await broadcast(env, url, topic, subject, bodyText, htmlParts.join("\n"));
       return jsonResponse({ ok: true, topic, ...result }, 200, origin, allowed);
     }
 
