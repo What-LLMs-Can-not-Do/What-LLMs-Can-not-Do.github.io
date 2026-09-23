@@ -133,7 +133,8 @@ export default function Subscribe() {
           <p className="font-medium">Check your email to confirm.</p>
           <p className="mt-1">
             We sent a confirmation link to <span className="font-medium">{email}</span>.
-            Your subscription is inactive until you confirm.
+            Your subscription is inactive until you confirm. If you don’t see it,
+            check your spam folder.
           </p>
           <button
             type="button"
