@@ -57,9 +57,11 @@ Short version:
 2. Create and migrate the D1 database, set worker secrets (`RESEND_API_KEY`, `FROM_EMAIL`, `NOTIFY_SECRET`, `ADMIN_PASSWORD`), deploy `workers/subscribe`.
 3. Open `/admin` (not in the nav) with `ADMIN_PASSWORD` to list subscribers and send news emails.
 3. Set repository **variables**:
-   - `VITE_SUBSCRIBE_API_URL` — worker origin (Pages build)
-   - `SUBSCRIBE_API_URL` — same worker origin (notify/news workflows)
+   - `VITE_SUBSCRIBE_API_URL` — `https://subscribe.what-llms-can-not-do.org` (Pages build)
+   - `SUBSCRIBE_API_URL` — same (notify/news workflows)
 4. Set repository **secret** `SUBSCRIBE_NOTIFY_SECRET` to the same value as the worker `NOTIFY_SECRET`.
+
+If university addresses bounce as spam, check Resend bounce details, remove the address from Resend’s suppression list, ensure DMARC exists on the sending domain, and prefer confirm links on `subscribe.what-llms-can-not-do.org` (not `workers.dev`).
 
 Automated mail:
 

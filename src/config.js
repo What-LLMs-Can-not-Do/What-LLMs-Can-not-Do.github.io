@@ -40,7 +40,7 @@ export const CONTRIBUTE_API_URL = resolveContributeApiUrl(
  */
 export const SUBSCRIBE_API_URL = resolveContributeApiUrl(
   import.meta.env.VITE_SUBSCRIBE_API_URL ||
-    "https://wlcd-subscribe.ledman0.workers.dev"
+    "https://subscribe.what-llms-can-not-do.org"
 );
 
 /** GoatCounter site code (e.g. "wlcd" → https://wlcd.goatcounter.com). Empty disables analytics. */
