@@ -113,24 +113,30 @@ async function sendConfirmEmail(
 ): Promise<void> {
   const link = confirmUrl(env, requestUrl, token);
   const site = siteOrigin(env);
-  const subject = "Confirm your What LLMs Can(not) Do subscription";
+  const subject = "Please confirm your subscription";
   const text = [
-    "Confirm your subscription to What LLMs Can(not) Do updates:",
+    "Hi,",
+    "",
+    "Please confirm your email subscription for What LLMs Can(not) Do by opening this link:",
     "",
     link,
     "",
-    "If you did not request this, you can ignore this email.",
-    `Site: ${site}`,
+    "If you did not request this, you can ignore this message.",
+    "",
+    site,
   ].join("\n");
-  const html = wrapHtml(
-    subject,
-    `<p style="margin: 0 0 1em; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #334155;">Confirm your subscription to <strong style="color: #0f172a;">What LLMs Can(not) Do</strong> updates.</p>
-     ${ctaButton(link, "Confirm subscription")}
-     <p style="margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; color: #64748b;">If you did not request this, you can ignore this email.</p>
-     <p style="margin: 12px 0 0; font-size: 12px; color: #94a3b8;">Or open this link: <a href="${escapeHtml(link)}" style="color: #64748b;">${escapeHtml(link)}</a></p>`,
-    `<a href="${escapeHtml(site)}" style="color: #64748b;">${escapeHtml(site)}</a>`,
-    { logoUrl: logoUrl(env), siteUrl: site }
-  );
+  // Keep confirmation mail minimal — heavy HTML/logo/CTA patterns get spam-scored by some university relays.
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>${escapeHtml(subject)}</title></head>
+<body style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; font-size: 16px; line-height: 1.5; color: #0f172a;">
+  <p>Hi,</p>
+  <p>Please confirm your email subscription for <strong>What LLMs Can(not) Do</strong>:</p>
+  <p><a href="${escapeHtml(link)}">${escapeHtml(link)}</a></p>
+  <p>If you did not request this, you can ignore this message.</p>
+  <p><a href="${escapeHtml(site)}">${escapeHtml(site)}</a></p>
+</body>
+</html>`;
   await sendEmail({
     apiKey: env.RESEND_API_KEY,
     from: env.FROM_EMAIL,
@@ -138,6 +144,7 @@ async function sendConfirmEmail(
     subject,
     text,
     html,
+    replyTo: env.REPLY_TO?.trim() || undefined,
   });
 }
 
@@ -173,6 +180,7 @@ async function broadcast(
         subject,
         text,
         html,
+        replyTo: env.REPLY_TO?.trim() || undefined,
         unsubscribeUrl: unsub,
       });
       sent++;

@@ -9,6 +9,8 @@ export type Env = {
   SITE_ORIGIN?: string;
   /** Public origin used in email links (confirm / unsubscribe). Prefer a custom domain. */
   API_ORIGIN?: string;
+  /** Optional Reply-To for deliverability / human contact. */
+  REPLY_TO?: string;
 };
 
 export async function sendEmail(options: {
@@ -18,6 +20,7 @@ export async function sendEmail(options: {
   subject: string;
   text: string;
   html: string;
+  replyTo?: string;
   unsubscribeUrl?: string;
 }): Promise<{ id: string }> {
   const res = await fetch("https://api.resend.com/emails", {
@@ -32,6 +35,7 @@ export async function sendEmail(options: {
       subject: options.subject,
       text: options.text,
       html: options.html,
+      reply_to: options.replyTo || undefined,
       headers: options.unsubscribeUrl
         ? {
             "List-Unsubscribe": `<${options.unsubscribeUrl}>`,

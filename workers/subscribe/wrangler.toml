@@ -27,3 +27,5 @@ custom_domain = true
 #   NOTIFY_SECRET
 #   ADMIN_PASSWORD
 #   TOKEN_SECRET
+# Optional:
+#   REPLY_TO   # e.g. lukas.edman@tum.de — real mailbox for replies
