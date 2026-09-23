@@ -53,8 +53,23 @@ function siteOrigin(env: Env): string {
   return (env.SITE_ORIGIN || "https://what-llms-can-not-do.org").replace(/\/$/, "");
 }
 
+/** Origin for confirm/unsubscribe links in emails — must match From-domain brand when possible. */
+function apiOrigin(env: Env, requestUrl: URL): string {
+  const configured = (env.API_ORIGIN || "").trim().replace(/\/$/, "");
+  if (configured) return configured;
+  return requestUrl.origin;
+}
+
 function logoUrl(env: Env): string {
   return `${siteOrigin(env)}/logo_cropped.png`;
+}
+
+function unsubUrl(env: Env, requestUrl: URL, token: string): string {
+  return `${apiOrigin(env, requestUrl)}/unsubscribe?token=${encodeURIComponent(token)}`;
+}
+
+function confirmUrl(env: Env, requestUrl: URL, token: string): string {
+  return `${apiOrigin(env, requestUrl)}/confirm?token=${encodeURIComponent(token)}`;
 }
 
 function jsonResponse(
@@ -90,14 +105,6 @@ function requireAdminPassword(request: Request, env: Env): boolean {
   return Boolean(header && header === expected);
 }
 
-function unsubUrl(_env: Env, requestUrl: URL, token: string): string {
-  return `${requestUrl.origin}/unsubscribe?token=${encodeURIComponent(token)}`;
-}
-
-function confirmUrl(_env: Env, requestUrl: URL, token: string): string {
-  return `${requestUrl.origin}/confirm?token=${encodeURIComponent(token)}`;
-}
-
 async function sendConfirmEmail(
   env: Env,
   requestUrl: URL,
@@ -106,7 +113,7 @@ async function sendConfirmEmail(
 ): Promise<void> {
   const link = confirmUrl(env, requestUrl, token);
   const site = siteOrigin(env);
-  const subject = "Confirm your WLCD subscription";
+  const subject = "Confirm your What LLMs Can(not) Do subscription";
   const text = [
     "Confirm your subscription to What LLMs Can(not) Do updates:",
     "",
@@ -119,7 +126,8 @@ async function sendConfirmEmail(
     subject,
     `<p style="margin: 0 0 1em; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #334155;">Confirm your subscription to <strong style="color: #0f172a;">What LLMs Can(not) Do</strong> updates.</p>
      ${ctaButton(link, "Confirm subscription")}
-     <p style="margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; color: #64748b;">If you did not request this, you can ignore this email.</p>`,
+     <p style="margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; color: #64748b;">If you did not request this, you can ignore this email.</p>
+     <p style="margin: 12px 0 0; font-size: 12px; color: #94a3b8;">Or open this link: <a href="${escapeHtml(link)}" style="color: #64748b;">${escapeHtml(link)}</a></p>`,
     `<a href="${escapeHtml(site)}" style="color: #64748b;">${escapeHtml(site)}</a>`,
     { logoUrl: logoUrl(env), siteUrl: site }
   );

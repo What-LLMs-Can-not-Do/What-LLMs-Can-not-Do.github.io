@@ -36,7 +36,9 @@ npx wrangler secret put NOTIFY_SECRET       # long random string for GitHub Acti
 npx wrangler secret put ADMIN_PASSWORD      # password for /admin subscriber list
 ```
 
-Optional: set `SITE_ORIGIN` / `ALLOWED_ORIGINS` in `wrangler.toml` `[vars]`.
+Optional: set `SITE_ORIGIN` / `ALLOWED_ORIGINS` / `API_ORIGIN` in `wrangler.toml` `[vars]`.
+
+`API_ORIGIN` should be a custom hostname on this worker (default `https://subscribe.what-llms-can-not-do.org`) so confirmation links match your From domain. Deploy with `custom_domain` in `wrangler.toml` creates the DNS record when the zone is in the same Cloudflare account.
 
 ### 4. Deploy
 

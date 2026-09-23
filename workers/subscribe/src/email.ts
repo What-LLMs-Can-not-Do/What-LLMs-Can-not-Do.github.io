@@ -7,6 +7,8 @@ export type Env = {
   TOKEN_SECRET?: string;
   ALLOWED_ORIGINS?: string;
   SITE_ORIGIN?: string;
+  /** Public origin used in email links (confirm / unsubscribe). Prefer a custom domain. */
+  API_ORIGIN?: string;
 };
 
 export async function sendEmail(options: {
