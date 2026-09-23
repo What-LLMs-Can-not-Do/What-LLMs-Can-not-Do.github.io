@@ -1,27 +1,45 @@
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Admin from "./Admin.jsx";
 import Analytics from "./Analytics.jsx";
 import Contribute from "./Contribute.jsx";
 import Home from "./Home.jsx";
+import MailActionRedirect from "./MailActionRedirect.jsx";
 import NavBar from "./NavBar.jsx";
 import Subscribe from "./Subscribe.jsx";
 import Table from "./table-scaffold.jsx";
 
 const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
 
-function App() {
+function AppShell() {
+  const { pathname } = useLocation();
+  const hideChrome =
+    pathname === "/confirm" ||
+    pathname === "/confirm/" ||
+    pathname === "/unsubscribe" ||
+    pathname === "/unsubscribe/";
+
   return (
-    <BrowserRouter basename={basename}>
-      <Analytics />
-      <NavBar />
+    <>
+      {!hideChrome ? <NavBar /> : null}
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/table" element={<Table />} />
         <Route path="/contribute" element={<Contribute />} />
         <Route path="/subscribe" element={<Subscribe />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/confirm" element={<MailActionRedirect action="confirm" />} />
+        <Route path="/unsubscribe" element={<MailActionRedirect action="unsubscribe" />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+    </>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter basename={basename}>
+      <Analytics />
+      <AppShell />
     </BrowserRouter>
   );
 }

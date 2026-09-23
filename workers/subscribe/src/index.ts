@@ -7,7 +7,6 @@ import {
   upsertSubscription,
 } from "./db";
 import {
-  ctaButton,
   escapeHtml,
   sendEmail,
   textToHtmlParagraphs,
@@ -58,10 +57,6 @@ function apiOrigin(env: Env, requestUrl: URL): string {
   const configured = (env.API_ORIGIN || "").trim().replace(/\/$/, "");
   if (configured) return configured;
   return requestUrl.origin;
-}
-
-function logoUrl(env: Env): string {
-  return `${siteOrigin(env)}/logo_cropped.png`;
 }
 
 function unsubUrl(env: Env, requestUrl: URL, token: string): string {
@@ -170,7 +165,8 @@ async function broadcast(
       bodyHtml || textToHtmlParagraphs(bodyText),
       `You received this because you subscribed to <strong>${escapeHtml(topic)}</strong>.
        <a href="${escapeHtml(unsub)}" style="color: #64748b;">Unsubscribe</a>`,
-      { logoUrl: logoUrl(env), siteUrl: site }
+      { siteUrl: site }
+      // No remote logo — image fetches are a common spam signal.
     );
     try {
       const { id } = await sendEmail({

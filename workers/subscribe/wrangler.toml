@@ -13,8 +13,8 @@ database_id = "0bc85b3d-2e64-485d-8952-20d2ffe1ba36"
 [vars]
 ALLOWED_ORIGINS = "https://what-llms-can-not-do.org,https://www.what-llms-can-not-do.org,https://what-llms-can-not-do.github.io,http://localhost:5173,http://127.0.0.1:5173"
 SITE_ORIGIN = "https://what-llms-can-not-do.org"
-# Used in confirm/unsubscribe links inside emails (avoid bare workers.dev links).
-API_ORIGIN = "https://subscribe.what-llms-can-not-do.org"
+# Confirm/unsubscribe links in emails (apex = same registrable domain as From).
+API_ORIGIN = "https://what-llms-can-not-do.org"
 
 # Custom hostname for email links (same Cloudflare account as the zone).
 [[routes]]

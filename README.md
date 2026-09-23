@@ -61,7 +61,23 @@ Short version:
    - `SUBSCRIBE_API_URL` — same (notify/news workflows)
 4. Set repository **secret** `SUBSCRIBE_NOTIFY_SECRET` to the same value as the worker `NOTIFY_SECRET`.
 
-If university addresses bounce as spam, check Resend bounce details, remove the address from Resend’s suppression list, ensure DMARC exists on the sending domain, and prefer confirm links on `subscribe.what-llms-can-not-do.org` (not `workers.dev`).
+### Email deliverability (important)
+
+Gmail often files new-domain mail as spam; some universities (e.g. TUM/LRZ) hard-reject with `554 … spam`. Do all of the following:
+
+1. **DMARC** on the apex (Cloudflare DNS TXT `_dmarc`):  
+   `v=DMARC1; p=none; rua=mailto:YOU@example.com`
+2. **Send from a subdomain** (recommended by Resend), not the apex:
+   - Resend → Domains → Add `mail.what-llms-can-not-do.org`
+   - Add the DNS records Resend shows (DNS only / grey cloud)
+   - After verified, in `workers/subscribe`:  
+     `npx wrangler secret put FROM_EMAIL`  
+     → `WLCD Updates <updates@mail.what-llms-can-not-do.org>`
+3. **Reply-To** is set on the worker (`REPLY_TO` secret → a real inbox).
+4. Confirm/unsubscribe links use the **site apex** (`https://what-llms-can-not-do.org/confirm?…`); the SPA redirects to the worker.
+5. After any bounce: Resend → **Suppressions** → remove the address before retrying.
+6. Optional: [Google Postmaster Tools](https://postmaster.google.com/) for the sending domain.
+7. Keep volume low while the domain warms up.
 
 Automated mail:
 

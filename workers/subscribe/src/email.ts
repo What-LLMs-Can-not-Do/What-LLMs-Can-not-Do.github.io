@@ -93,7 +93,16 @@ export function wrapHtml(
     <div style="height: 1px; background-color: #e2e8f0; line-height: 1px; font-size: 1px;">&nbsp;</div>
   </td>
 </tr>`
-    : "";
+    : `<tr>
+  <td align="center" style="padding: 24px 32px 12px; font-family: ${EMAIL_FONT}; font-size: 15px; line-height: 1.3; color: #0f172a; font-weight: 600;">
+    ${siteUrl ? `<a href="${escapeHtml(siteUrl)}" style="color: #0f172a; text-decoration: none;">${escapeHtml(brand)}</a>` : escapeHtml(brand)}
+  </td>
+</tr>
+<tr>
+  <td style="padding: 0 32px;">
+    <div style="height: 1px; background-color: #e2e8f0; line-height: 1px; font-size: 1px;">&nbsp;</div>
+  </td>
+</tr>`;
 
   return `<!DOCTYPE html>
 <html lang="en">
