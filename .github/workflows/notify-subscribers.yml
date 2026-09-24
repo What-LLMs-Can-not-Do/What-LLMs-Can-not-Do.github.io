@@ -26,13 +26,32 @@ concurrency:
 jobs:
   notify:
     runs-on: ubuntu-latest
-    if: ${{ vars.SUBSCRIBE_API_URL != '' }}
+    # Always run a job (avoid GitHub "No jobs were run" emails from a skipped-only workflow).
     steps:
+      - name: Check subscribe notify config
+        id: config
+        env:
+          SUBSCRIBE_API_URL: ${{ vars.SUBSCRIBE_API_URL }}
+          SUBSCRIBE_NOTIFY_SECRET: ${{ secrets.SUBSCRIBE_NOTIFY_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${SUBSCRIBE_API_URL:-}" ] || [ -z "${SUBSCRIBE_NOTIFY_SECRET:-}" ]; then
+            echo "Subscribe notify is not fully configured (SUBSCRIBE_API_URL / SUBSCRIBE_NOTIFY_SECRET)."
+            echo "Skipping send — set both in repo Settings → Secrets and variables."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "API=${SUBSCRIBE_API_URL%/}"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.config.outputs.configured == 'true'
         with:
           fetch-depth: 0
 
       - name: Classify data.csv changes
+        if: steps.config.outputs.configured == 'true'
         id: classify
         shell: bash
         run: |
@@ -57,6 +76,7 @@ jobs:
           cat /tmp/notify-events.json
 
       - name: Send notify emails
+        if: steps.config.outputs.configured == 'true'
         env:
           SUBSCRIBE_API_URL: ${{ vars.SUBSCRIBE_API_URL }}
           SUBSCRIBE_NOTIFY_SECRET: ${{ secrets.SUBSCRIBE_NOTIFY_SECRET }}
@@ -64,14 +84,6 @@ jobs:
         run: |
           set -euo pipefail
           API="${SUBSCRIBE_API_URL%/}"
-          if [ -z "${SUBSCRIBE_API_URL:-}" ]; then
-            echo "::error::SUBSCRIBE_API_URL variable is empty."
-            exit 1
-          fi
-          if [ -z "${SUBSCRIBE_NOTIFY_SECRET:-}" ]; then
-            echo "::error::SUBSCRIBE_NOTIFY_SECRET is empty."
-            exit 1
-          fi
           echo "API=$API"
           echo "NOTIFY_SECRET length=${#SUBSCRIBE_NOTIFY_SECRET}"
           count="$(python3 -c 'import json; print(len(json.load(open("/tmp/notify-events.json"))["events"]))')"

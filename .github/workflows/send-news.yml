@@ -18,9 +18,24 @@ permissions:
 jobs:
   send:
     runs-on: ubuntu-latest
-    if: ${{ vars.SUBSCRIBE_API_URL != '' }}
     steps:
+      - name: Check subscribe news config
+        id: config
+        env:
+          SUBSCRIBE_API_URL: ${{ vars.SUBSCRIBE_API_URL }}
+          SUBSCRIBE_NOTIFY_SECRET: ${{ secrets.SUBSCRIBE_NOTIFY_SECRET }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${SUBSCRIBE_API_URL:-}" ] || [ -z "${SUBSCRIBE_NOTIFY_SECRET:-}" ]; then
+            echo "Subscribe news is not fully configured (SUBSCRIBE_API_URL / SUBSCRIBE_NOTIFY_SECRET)."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: POST /news
+        if: steps.config.outputs.configured == 'true'
         env:
           SUBSCRIBE_API_URL: ${{ vars.SUBSCRIBE_API_URL }}
           SUBSCRIBE_NOTIFY_SECRET: ${{ secrets.SUBSCRIBE_NOTIFY_SECRET }}
@@ -30,10 +45,6 @@ jobs:
         run: |
           set -euo pipefail
           API="${SUBSCRIBE_API_URL%/}"
-          if [ -z "${SUBSCRIBE_NOTIFY_SECRET:-}" ]; then
-            echo "::error::SUBSCRIBE_NOTIFY_SECRET is empty."
-            exit 1
-          fi
           python3 -c 'import json,os; open("/tmp/news-payload.json","w").write(json.dumps({"subject":os.environ["NEWS_SUBJECT"],"body":os.environ["NEWS_BODY"]}))'
           # Use curl — Cloudflare blocks Python-urllib from Actions (error 1010).
           http_code="$(curl -sS -o /tmp/news-response.json -w "%{http_code}" \
