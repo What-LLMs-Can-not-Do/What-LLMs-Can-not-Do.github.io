@@ -58,13 +58,22 @@ Note the worker URL (e.g. `https://wlcd-subscribe.<account>.workers.dev`).
 
 | Method | Path | Auth | Purpose |
 | --- | --- | --- | --- |
-| `POST` | `/subscribe` | CORS origin | `{ email, topics: ["news","additions","changes"] }` |
+| `POST` | `/subscribe` | CORS origin | `{ email, topics, frequency? }` — public topics only (`news`/`additions`/`changes`); `frequency`: `immediate`\|`daily`\|`weekly`(default)\|`monthly`\|`yearly` |
 | `GET` | `/confirm?token=` | — | Confirm subscription; redirects to site |
 | `GET` | `/unsubscribe?token=` | — | Unsubscribe; redirects to site |
 | `GET` | `/admin/subscribers` | `X-Admin-Password` | List subscribers for the site `/admin` page |
 | `POST` | `/admin/news` | `X-Admin-Password` | `{ subject, body }` — send news from `/admin` |
-| `POST` | `/notify` | `X-Notify-Secret` | `{ type: "additions"\|"changes", title, summary?, pr_url? }` |
-| `POST` | `/news` | `X-Notify-Secret` | `{ subject, body }` |
+| `POST` | `/notify` | `X-Notify-Secret` | Queue event; email immediate subscribers. Pass `"test": true` to send only to the hidden `debug` topic (no digest queue). |
+| `POST` | `/digest` | `X-Notify-Secret` | Run digests now (optional `{ frequencies: ["weekly"] }`) |
+| `POST` | `/news` | `X-Notify-Secret` | `{ subject, body, test? }` — `test: true` sends only to `debug` |
+
+A cron trigger (`0 15 * * *` UTC) runs digests: daily every day, weekly on Mondays, monthly on the 1st, yearly on Jan 1. News ignores frequency and is always sent when composed.
+
+For an existing D1 database, also run:
+
+```bash
+npm run db:migrate:frequency:remote
+```
 
 ## Local development
 

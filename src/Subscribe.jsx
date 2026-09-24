@@ -20,6 +20,34 @@ const TOPICS = [
   },
 ];
 
+const FREQUENCIES = [
+  {
+    id: "immediate",
+    label: "Immediately",
+    hint: "One email per addition or change as soon as it is merged.",
+  },
+  {
+    id: "daily",
+    label: "Daily",
+    hint: "One digest per topic each day, when there is something new.",
+  },
+  {
+    id: "weekly",
+    label: "Weekly",
+    hint: "One digest per topic each Monday (default).",
+  },
+  {
+    id: "monthly",
+    label: "Monthly",
+    hint: "One digest per topic on the first of each month.",
+  },
+  {
+    id: "yearly",
+    label: "Yearly",
+    hint: "One digest per topic on January 1.",
+  },
+];
+
 const FIELD_CLASS =
   "mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500";
 
@@ -49,7 +77,8 @@ export default function Subscribe() {
   }, [searchParams]);
 
   const [email, setEmail] = useState("");
-  const [topics, setTopics] = useState(() => new Set(["news", "additions", "changes"]));
+  const [topics, setTopics] = useState(() => new Set(["news", "additions"]));
+  const [frequency, setFrequency] = useState("weekly");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("idle"); // idle | pending | updated
@@ -91,6 +120,7 @@ export default function Subscribe() {
         body: JSON.stringify({
           email: email.trim(),
           topics: [...topics],
+          frequency,
         }),
       });
       const result = await response.json().catch(() => ({}));
@@ -112,7 +142,8 @@ export default function Subscribe() {
       </h1>
       <p className="mt-3 max-w-2xl text-sm leading-relaxed text-slate-600">
         Get email updates about the project. Choose which topics you want — you can
-        unsubscribe any time from a link in each email.
+        unsubscribe any time from a link in each email. News is sent when published;
+        additions and changes follow the frequency you pick.
       </p>
 
       {banner ? (
@@ -148,8 +179,8 @@ export default function Subscribe() {
         <div className="mt-8 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-900">
           <p className="font-medium">Preferences updated.</p>
           <p className="mt-1">
-            Your topic selections for <span className="font-medium">{email}</span> were
-            saved.
+            Your topic and frequency selections for{" "}
+            <span className="font-medium">{email}</span> were saved.
           </p>
           <button
             type="button"
@@ -195,6 +226,37 @@ export default function Subscribe() {
                         {topic.label}
                       </span>
                       <span className="mt-0.5 block text-xs text-slate-500">{topic.hint}</span>
+                    </span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </fieldset>
+
+          <fieldset>
+            <legend className="text-sm font-medium text-slate-800">
+              Frequency for additions &amp; changes
+            </legend>
+            <p className="mt-1 text-xs text-slate-500">
+              Non-immediate options combine updates into one email per topic.
+              News is always sent separately when published.
+            </p>
+            <ul className="mt-3 space-y-3">
+              {FREQUENCIES.map((option) => (
+                <li key={option.id}>
+                  <label className="flex cursor-pointer gap-3 rounded-md border border-slate-200 bg-white px-3 py-3 hover:bg-slate-50">
+                    <input
+                      type="radio"
+                      name="frequency"
+                      className="mt-1 h-4 w-4 border-slate-300 text-slate-900 focus:ring-slate-500"
+                      checked={frequency === option.id}
+                      onChange={() => setFrequency(option.id)}
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-slate-900">
+                        {option.label}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-slate-500">{option.hint}</span>
                     </span>
                   </label>
                 </li>

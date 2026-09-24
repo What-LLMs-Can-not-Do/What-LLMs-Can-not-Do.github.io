@@ -15,8 +15,19 @@ import subprocess
 import sys
 from typing import Dict, List, Tuple
 
-# Fields to show for new rows / field-level diffs (order preserved).
-HIGHLIGHT_FIELDS = [
+# Fields to show for new-row addition emails (order preserved).
+# CSV key → display label in email (Open-source drops the parenthetical).
+ADDITION_HIGHLIGHT_FIELDS = [
+    ("General category", "General category"),
+    ("Keywords", "Keywords"),
+    ("Summary", "Summary"),
+    ("Closed", "Closed"),
+    ("Open-weight", "Open-weight"),
+    ("Open-source (including open training data)", "Open-source"),
+]
+
+# Fields compared / shown for change emails (order preserved).
+CHANGE_HIGHLIGHT_FIELDS = [
     "General category",
     "Subtopic/Keywords",
     "Keywords",
@@ -35,8 +46,13 @@ HIGHLIGHT_FIELDS = [
     "Comments?",
 ]
 
-# Compared for diffs but truncated when emitting.
 LONG_FIELDS = {"Summary", "Abstract", "Benchmark Example", "Comments?", "Model(s) tested"}
+
+# Extra fields compared for change emails when they differ.
+EXPAND_FIELDS = ("Abstract", "Benchmark Example")
+
+# Safety cap only — avoid multi-megabyte cells blowing up Resend payloads.
+MAX_FIELD_CHARS = 20000
 
 # Never include in change lists (noise / derived).
 SKIP_FIELDS = {"Num chars in summary", "ID"}
@@ -77,7 +93,7 @@ def parse_titled_rows(text: str) -> Dict[str, Dict[str, str]]:
     return rows
 
 
-def clip(value: str, limit: int = 220) -> str:
+def clip(value: str, limit: int = MAX_FIELD_CHARS) -> str:
     text = " ".join((value or "").split())
     if len(text) <= limit:
         return text
@@ -87,24 +103,23 @@ def clip(value: str, limit: int = 220) -> str:
 def summarize_row(row: Dict[str, str]) -> str:
     summary = (row.get("Summary") or "").strip()
     if summary:
-        return clip(summary, 280)
+        return clip(summary)
     return ""
 
 
 def row_highlights(row: Dict[str, str]) -> List[dict]:
     highlights = []
-    for field in HIGHLIGHT_FIELDS:
-        raw = (row.get(field) or "").strip()
+    for csv_field, label in ADDITION_HIGHLIGHT_FIELDS:
+        raw = (row.get(csv_field) or "").strip()
         if not raw:
             continue
-        limit = 160 if field in LONG_FIELDS else 220
-        highlights.append({"field": field, "value": clip(raw, limit)})
+        highlights.append({"field": label, "value": clip(raw)})
     return highlights
 
 
 def field_changes(before: Dict[str, str], after: Dict[str, str]) -> List[dict]:
     keys = []
-    for field in HIGHLIGHT_FIELDS:
+    for field in CHANGE_HIGHLIGHT_FIELDS:
         if field not in SKIP_FIELDS:
             keys.append(field)
     # Include any other keys that differ (except skip list / paper title).
@@ -112,7 +127,7 @@ def field_changes(before: Dict[str, str], after: Dict[str, str]) -> List[dict]:
         set(before.keys()) | set(after.keys()) - set(keys) - SKIP_FIELDS - {"Paper title"}
     )
     # Prefer highlight order; append Abstract/Benchmark Example only if they changed.
-    for field in ("Abstract", "Benchmark Example"):
+    for field in EXPAND_FIELDS:
         if field not in keys:
             keys.append(field)
 
@@ -126,12 +141,16 @@ def field_changes(before: Dict[str, str], after: Dict[str, str]) -> List[dict]:
         new = (after.get(field) or "").strip()
         if old == new:
             continue
-        limit = 160 if field in LONG_FIELDS or field in {"Abstract", "Benchmark Example"} else 220
+        label = (
+            "Open-source"
+            if field.startswith("Open-source")
+            else field
+        )
         changes.append(
             {
-                "field": field,
-                "before": clip(old, limit) if old else "(empty)",
-                "after": clip(new, limit) if new else "(empty)",
+                "field": label,
+                "before": clip(old) if old else "(empty)",
+                "after": clip(new) if new else "(empty)",
             }
         )
     return changes

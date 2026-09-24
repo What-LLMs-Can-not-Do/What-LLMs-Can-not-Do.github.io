@@ -20,12 +20,17 @@ API_ORIGIN = "https://what-llms-can-not-do.org"
 [[routes]]
 pattern = "subscribe.what-llms-can-not-do.org"
 custom_domain = true
-# FROM_EMAIL must be on a Resend-verified domain, e.g. "WLCD <updates@yourdomain.org>"
+
+# Daily digest tick (UTC). Weekly = Mondays; monthly = 1st; yearly = Jan 1.
+[triggers]
+crons = ["0 15 * * *"]
+
+# FROM_EMAIL — newsletter/transactional From, e.g. "WLCD Updates <updates@mail.what-llms-can-not-do.org>"
 # Secrets (wrangler secret put):
 #   RESEND_API_KEY
-#   FROM_EMAIL
+#   FROM_EMAIL      # updates@mail.… only (not contact@)
 #   NOTIFY_SECRET
 #   ADMIN_PASSWORD
 #   TOKEN_SECRET
 # Optional:
-#   REPLY_TO   # e.g. lukas.edman@tum.de — real mailbox for replies
+#   REPLY_TO        # contact@mail.… — human replies land via Email Routing

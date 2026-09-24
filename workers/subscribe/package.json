@@ -7,7 +7,9 @@
     "deploy": "wrangler deploy",
     "types": "wrangler types",
     "db:migrate:local": "wrangler d1 execute wlcd-subscribers --local --file=./schema.sql",
-    "db:migrate:remote": "wrangler d1 execute wlcd-subscribers --remote --file=./schema.sql"
+    "db:migrate:remote": "wrangler d1 execute wlcd-subscribers --remote --file=./schema.sql",
+    "db:migrate:frequency:local": "wrangler d1 execute wlcd-subscribers --local --file=./migrations/001_frequency.sql",
+    "db:migrate:frequency:remote": "wrangler d1 execute wlcd-subscribers --remote --file=./migrations/001_frequency.sql"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240925.0",

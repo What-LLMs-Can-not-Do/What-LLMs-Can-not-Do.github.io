@@ -1,10 +1,17 @@
 import {
   confirmSubscription,
   getByEmail,
+  insertPendingEvent,
   listAllSubscribers,
+  listConfirmedByFrequency,
   listConfirmedForTopic,
+  listPendingEventsSince,
+  markDigestSent,
+  prunePendingEventsOlderThan,
+  subscriberFrequency,
   unsubscribeAll,
   upsertSubscription,
+  type NotifyEventInput,
 } from "./db";
 import {
   escapeHtml,
@@ -13,7 +20,22 @@ import {
   wrapHtml,
   type Env,
 } from "./email";
-import { normalizeTopics, parseTopicsJson, type Topic } from "./topics";
+import {
+  alreadyDigestedToday,
+  frequenciesDueOn,
+  normalizeFrequency,
+  type Frequency,
+} from "./frequencies";
+import {
+  buildDigestNotifyContent,
+  buildSingleNotifyContent,
+} from "./notify_content";
+import {
+  mergePublicTopicsWithInternal,
+  normalizePublicTopics,
+  parseTopicsJson,
+  type Topic,
+} from "./topics";
 import { normalizeEmail, randomToken } from "./tokens";
 
 function corsHeaders(origin: string | null, allowed: string[]): HeadersInit {
@@ -143,15 +165,15 @@ async function sendConfirmEmail(
   });
 }
 
-async function broadcast(
+async function sendToRecipients(
   env: Env,
   requestUrl: URL,
+  recipients: Awaited<ReturnType<typeof listConfirmedForTopic>>,
   topic: Topic,
   subject: string,
   bodyText: string,
   bodyHtml?: string
 ): Promise<{ sent: number; failed: number; deliveries: { email: string; id: string }[] }> {
-  const recipients = await listConfirmedForTopic(env.DB, topic);
   let sent = 0;
   let failed = 0;
   const deliveries: { email: string; id: string }[] = [];
@@ -166,7 +188,6 @@ async function broadcast(
       `You received this because you subscribed to <strong>${escapeHtml(topic)}</strong>.
        <a href="${escapeHtml(unsub)}" style="color: #64748b;">Unsubscribe</a>`,
       { siteUrl: site }
-      // No remote logo — image fetches are a common spam signal.
     );
     try {
       const { id } = await sendEmail({
@@ -191,63 +212,17 @@ async function broadcast(
   return { sent, failed, deliveries };
 }
 
-function notifyIntroHtml(topic: Topic, title: string): string {
-  const intro =
-    topic === "additions"
-      ? "A new entry was added to the What LLMs Can(not) Do table."
-      : "An existing entry in the What LLMs Can(not) Do table was updated.";
-  return `<p style="margin: 0 0 1em; color: #334155;">${escapeHtml(intro)}</p>
-<p style="margin: 0 0 1em; font-size: 18px; font-weight: 600; color: #0f172a;">${escapeHtml(title)}</p>`;
-}
-
-function fieldChangeBlocksHtml(
-  fieldChanges: { field?: string; before?: string; after?: string }[]
-): string {
-  const blocks: string[] = [
-    `<p style="margin: 0 0 0.75em; font-weight: 600; color: #0f172a;">What changed</p>`,
-  ];
-  for (const change of fieldChanges) {
-    const field = String(change.field || "").trim() || "Field";
-    const before = String(change.before ?? "").trim() || "(empty)";
-    const after = String(change.after ?? "").trim() || "(empty)";
-    blocks.push(`<div style="margin: 0 0 1em; padding: 12px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
-  <div style="margin: 0 0 8px; font-size: 13px; font-weight: 600; color: #0f172a;">${escapeHtml(field)}</div>
-  <div style="margin: 0 0 6px; padding: 8px 10px; background: #fef2f2; border-left: 3px solid #dc2626; color: #991b1b; font-size: 14px; line-height: 1.45;">
-    <span style="text-decoration: line-through;">${escapeHtml(before)}</span>
-  </div>
-  <div style="margin: 0; padding: 8px 10px; background: #f0fdf4; border-left: 3px solid #16a34a; color: #166534; font-size: 14px; line-height: 1.45;">
-    ${escapeHtml(after)}
-  </div>
-</div>`);
-  }
-  return blocks.join("\n");
-}
-
-function highlightsHtml(highlights: { field?: string; value?: string }[]): string {
-  const items: string[] = [];
-  for (const item of highlights) {
-    const field = String(item.field || "").trim();
-    const value = String(item.value || "").trim();
-    if (!field || !value) continue;
-    items.push(
-      `<li style="margin: 0 0 0.4em;"><strong style="color: #0f172a;">${escapeHtml(field)}:</strong> ${escapeHtml(value)}</li>`
-    );
-  }
-  if (!items.length) return "";
-  return `<p style="margin: 0 0 0.5em; font-weight: 600; color: #0f172a;">Entry details</p>
-<ul style="margin: 0 0 1em; padding-left: 1.2em; color: #334155;">${items.join("")}</ul>`;
-}
-
-function notifyFooterHtml(site: string, prUrl: string): string {
-  const parts = [
-    `<p style="margin: 0 0 0.5em;"><a href="${escapeHtml(site)}/table" style="color: #2563eb;">Browse the table</a></p>`,
-  ];
-  if (prUrl) {
-    parts.push(
-      `<p style="margin: 0;"><a href="${escapeHtml(prUrl)}" style="color: #2563eb;">View pull request</a></p>`
-    );
-  }
-  return parts.join("\n");
+async function broadcast(
+  env: Env,
+  requestUrl: URL,
+  topic: Topic,
+  subject: string,
+  bodyText: string,
+  bodyHtml?: string,
+  frequency?: Frequency
+): Promise<{ sent: number; failed: number; deliveries: { email: string; id: string }[] }> {
+  const recipients = await listConfirmedForTopic(env.DB, topic, frequency);
+  return sendToRecipients(env, requestUrl, recipients, topic, subject, bodyText, bodyHtml);
 }
 
 async function handleSendNews(
@@ -266,13 +241,14 @@ async function handleSendNews(
     );
   }
 
-  let body: { subject?: string; body?: string };
+  let body: { subject?: string; body?: string; test?: boolean };
   try {
     body = (await request.json()) as typeof body;
   } catch {
     return jsonResponse({ error: "Invalid JSON body" }, 400, origin, allowed);
   }
 
+  const isTest = Boolean(body.test);
   const subjectRaw = String(body.subject || "").trim();
   const newsBody = String(body.body || "").trim();
   if (!subjectRaw || !newsBody) {
@@ -284,16 +260,111 @@ async function handleSendNews(
     );
   }
 
-  const subject = subjectRaw.replace(/^\[News\]\s*/i, "");
-  const subjectLine = `[News] ${subject}`;
+  const subject = subjectRaw
+    .replace(/^\[Debug\]\s*/i, "")
+    .replace(/^\[News\]\s*/i, "");
+  const subjectLine = isTest ? `[Debug] [News] ${subject}` : `[News] ${subject}`;
 
   const site = siteOrigin(env);
   const text = `${newsBody}\n\n—\nWhat LLMs Can(not) Do\n${site}`;
-  const result = await broadcast(env, requestUrl, "news", subjectLine, text);
-  return jsonResponse({ ok: true, topic: "news", subject: subjectLine, ...result }, 200, origin, allowed);
+  // News is always sent when composed — frequency only applies to table additions/changes.
+  // test: true sends only to the hidden debug topic.
+  const result = await broadcast(
+    env,
+    requestUrl,
+    isTest ? "debug" : "news",
+    subjectLine,
+    text
+  );
+  return jsonResponse(
+    { ok: true, topic: isTest ? "debug" : "news", test: isTest, subject: subjectLine, ...result },
+    200,
+    origin,
+    allowed
+  );
 }
 
-export default {
+async function runDigests(
+  env: Env,
+  requestUrl: URL,
+  options?: { forceFrequencies?: Frequency[] }
+): Promise<{
+  frequencies: Frequency[];
+  digests_sent: number;
+  failed: number;
+  subscribers_touched: number;
+}> {
+  const now = new Date();
+  const due = options?.forceFrequencies?.length
+    ? options.forceFrequencies
+    : frequenciesDueOn(now);
+  const site = siteOrigin(env);
+  let digestsSent = 0;
+  let failed = 0;
+  let subscribersTouched = 0;
+
+  if (!env.RESEND_API_KEY || !env.FROM_EMAIL) {
+    console.error("Digest skipped: missing Resend credentials");
+    return { frequencies: due, digests_sent: 0, failed: 0, subscribers_touched: 0 };
+  }
+
+  for (const frequency of due) {
+    if (frequency === "immediate") continue;
+    const subscribers = await listConfirmedByFrequency(env.DB, frequency);
+    for (const row of subscribers) {
+      if (alreadyDigestedToday(row.last_digest_at, now)) continue;
+
+      const since = row.last_digest_at || row.created_at;
+      const topics = parseTopicsJson(row.topics_json).filter(
+        (t): t is "additions" | "changes" => t === "additions" || t === "changes"
+      );
+      if (!topics.length) continue;
+
+      let sentAny = false;
+      for (const topic of topics) {
+        const events = await listPendingEventsSince(env.DB, topic, since);
+        const content = buildDigestNotifyContent({
+          topic,
+          frequency,
+          events,
+          site,
+        });
+        if (!content) continue;
+
+        const result = await sendToRecipients(
+          env,
+          requestUrl,
+          [row],
+          topic,
+          content.subject,
+          content.bodyText,
+          content.bodyHtml
+        );
+        digestsSent += result.sent;
+        failed += result.failed;
+        if (result.sent > 0) sentAny = true;
+      }
+
+      if (sentAny) {
+        await markDigestSent(env.DB, row.email, now.toISOString());
+        subscribersTouched++;
+      }
+    }
+  }
+
+  // Keep roughly a year of events for yearly digests, plus a small buffer.
+  const pruneBefore = new Date(now.getTime() - 400 * 24 * 60 * 60 * 1000).toISOString();
+  await prunePendingEventsOlderThan(env.DB, pruneBefore);
+
+  return {
+    frequencies: due,
+    digests_sent: digestsSent,
+    failed,
+    subscribers_touched: subscribersTouched,
+  };
+}
+
+const worker = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const allowed = parseAllowedOrigins(env.ALLOWED_ORIGINS);
     const origin = request.headers.get("Origin");
@@ -323,19 +394,24 @@ export default {
         );
       }
 
-      let body: { email?: string; topics?: unknown };
+      let body: { email?: string; topics?: unknown; frequency?: unknown };
       try {
-        body = (await request.json()) as { email?: string; topics?: unknown };
+        body = (await request.json()) as {
+          email?: string;
+          topics?: unknown;
+          frequency?: unknown;
+        };
       } catch {
         return jsonResponse({ error: "Invalid JSON body" }, 400, origin, allowed);
       }
 
       const email = normalizeEmail(body.email || "");
-      const topics = normalizeTopics(body.topics);
+      const publicTopics = normalizePublicTopics(body.topics);
+      const frequency = normalizeFrequency(body.frequency);
       if (!email) {
         return jsonResponse({ error: "Enter a valid email address." }, 400, origin, allowed);
       }
-      if (!topics.length) {
+      if (!publicTopics.length) {
         return jsonResponse(
           { error: "Select at least one topic to subscribe to." },
           400,
@@ -348,10 +424,15 @@ export default {
       const confirmToken = existing?.confirmed ? existing.confirm_token : randomToken();
       const unsubToken = existing?.unsub_token || randomToken();
       const alreadyConfirmed = Boolean(existing?.confirmed);
+      const topics = mergePublicTopicsWithInternal(
+        publicTopics,
+        existing ? parseTopicsJson(existing.topics_json) : []
+      );
 
       await upsertSubscription(env.DB, {
         email,
         topics,
+        frequency,
         confirmToken,
         unsubToken,
         confirmed: alreadyConfirmed,
@@ -366,14 +447,19 @@ export default {
           return jsonResponse({ error: message }, 500, origin, allowed);
         }
         return jsonResponse(
-          { ok: true, status: "pending_confirmation" },
+          { ok: true, status: "pending_confirmation", frequency },
           200,
           origin,
           allowed
         );
       }
 
-      return jsonResponse({ ok: true, status: "updated" }, 200, origin, allowed);
+      return jsonResponse(
+        { ok: true, status: "updated", frequency },
+        200,
+        origin,
+        allowed
+      );
     }
 
     if (request.method === "GET" && url.pathname === "/confirm") {
@@ -427,6 +513,14 @@ export default {
         title?: string;
         summary?: string;
         pr_url?: string;
+        test?: boolean;
+        events?: {
+          title?: string;
+          summary?: string;
+          pr_url?: string;
+          highlights?: { field?: string; value?: string }[];
+          field_changes?: { field?: string; before?: string; after?: string }[];
+        }[];
         highlights?: { field?: string; value?: string }[];
         field_changes?: { field?: string; before?: string; after?: string }[];
       };
@@ -436,6 +530,7 @@ export default {
         return jsonResponse({ error: "Invalid JSON body" }, 400, origin, allowed);
       }
 
+      const isTest = Boolean(body.test);
       const type = String(body.type || "").toLowerCase();
       if (type !== "additions" && type !== "changes") {
         return jsonResponse(
@@ -445,60 +540,138 @@ export default {
           allowed
         );
       }
-      const topic = type as Topic;
-      const title = String(body.title || "").trim() || "Table update";
-      const summary = String(body.summary || "").trim();
-      const prUrl = String(body.pr_url || "").trim();
+      const topic = type as "additions" | "changes";
       const site = siteOrigin(env);
 
-      const subject =
-        topic === "additions" ? `[Addition] ${title}` : `[Change] ${title}`;
-
-      const lines = [
-        topic === "additions"
-          ? "A new entry was added to the What LLMs Can(not) Do table."
-          : "An existing entry in the What LLMs Can(not) Do table was updated.",
-        "",
-        title,
-      ];
-
-      const fieldChanges = Array.isArray(body.field_changes) ? body.field_changes : [];
-      const highlights = Array.isArray(body.highlights) ? body.highlights : [];
-
-      const htmlParts = [notifyIntroHtml(topic, title)];
-
-      if (topic === "changes" && fieldChanges.length) {
-        lines.push("", "What changed:");
-        for (const change of fieldChanges) {
-          const field = String(change.field || "").trim() || "Field";
-          const before = String(change.before ?? "").trim() || "(empty)";
-          const after = String(change.after ?? "").trim() || "(empty)";
-          lines.push("", `• ${field}`, `  − ${before}`, `  + ${after}`);
+      // Debug aggregate: { test: true, type, events: [...] } → one digest email to debug.
+      if (isTest && Array.isArray(body.events) && body.events.length > 0) {
+        const pendingLike = body.events.map((event, index) => ({
+          id: index + 1,
+          topic,
+          title: String(event.title || "").trim() || "Table update",
+          summary: String(event.summary || "").trim(),
+          pr_url: String(event.pr_url || "").trim(),
+          highlights_json: JSON.stringify(
+            Array.isArray(event.highlights) ? event.highlights : []
+          ),
+          field_changes_json: JSON.stringify(
+            Array.isArray(event.field_changes) ? event.field_changes : []
+          ),
+          created_at: new Date().toISOString(),
+        }));
+        const content = buildDigestNotifyContent({
+          topic,
+          frequency: "weekly",
+          events: pendingLike,
+          site,
+        });
+        if (!content) {
+          return jsonResponse({ error: "No events to send" }, 400, origin, allowed);
         }
-        htmlParts.push(fieldChangeBlocksHtml(fieldChanges));
-      } else if (topic === "additions" && highlights.length) {
-        lines.push("", "Entry details:");
-        for (const item of highlights) {
-          const field = String(item.field || "").trim();
-          const value = String(item.value || "").trim();
-          if (!field || !value) continue;
-          lines.push(`• ${field}: ${value}`);
-        }
-        htmlParts.push(highlightsHtml(highlights));
-      } else if (summary) {
-        lines.push("", summary);
-        htmlParts.push(
-          `<p style="margin: 0 0 1em; color: #334155;">${escapeHtml(summary)}</p>`
+        const subject = `[Debug] ${content.subject}`;
+        const result = await broadcast(
+          env,
+          url,
+          "debug",
+          subject,
+          content.bodyText,
+          content.bodyHtml
+        );
+        return jsonResponse(
+          {
+            ok: true,
+            topic: "debug",
+            test: true,
+            aggregate: true,
+            content_topic: topic,
+            event_count: pendingLike.length,
+            ...result,
+          },
+          200,
+          origin,
+          allowed
         );
       }
 
-      lines.push("", `Browse the table: ${site}/table`);
-      if (prUrl) lines.push(`Pull request: ${prUrl}`);
-      htmlParts.push(notifyFooterHtml(site, prUrl));
+      const title = String(body.title || "").trim() || "Table update";
+      const summary = String(body.summary || "").trim();
+      const prUrl = String(body.pr_url || "").trim();
+      const fieldChanges = Array.isArray(body.field_changes) ? body.field_changes : [];
+      const highlights = Array.isArray(body.highlights) ? body.highlights : [];
 
-      const bodyText = lines.join("\n");
-      const result = await broadcast(env, url, topic, subject, bodyText, htmlParts.join("\n"));
-      return jsonResponse({ ok: true, topic, ...result }, 200, origin, allowed);
+      const content = buildSingleNotifyContent({
+        topic,
+        title,
+        summary,
+        prUrl,
+        site,
+        highlights,
+        fieldChanges,
+      });
+      const subject = isTest ? `[Debug] ${content.subject}` : content.subject;
+
+      if (isTest) {
+        // Test sends go only to the hidden debug topic — do not queue for digests.
+        const result = await broadcast(
+          env,
+          url,
+          "debug",
+          subject,
+          content.bodyText,
+          content.bodyHtml
+        );
+        return jsonResponse(
+          { ok: true, topic: "debug", test: true, content_topic: topic, ...result },
+          200,
+          origin,
+          allowed
+        );
+      }
+
+      const event: NotifyEventInput = {
+        topic,
+        title,
+        summary,
+        prUrl,
+        highlights,
+        fieldChanges,
+      };
+      await insertPendingEvent(env.DB, event);
+
+      const result = await broadcast(
+        env,
+        url,
+        topic,
+        subject,
+        content.bodyText,
+        content.bodyHtml,
+        "immediate"
+      );
+      return jsonResponse(
+        { ok: true, topic, queued: true, immediate: result },
+        200,
+        origin,
+        allowed
+      );
+    }
+
+    if (request.method === "POST" && url.pathname === "/digest") {
+      if (!requireNotifySecret(request, env)) {
+        return jsonResponse({ error: "Unauthorized" }, 401, origin, allowed);
+      }
+      let forceFrequencies: Frequency[] | undefined;
+      try {
+        const body = (await request.json()) as { frequencies?: unknown };
+        if (Array.isArray(body.frequencies)) {
+          forceFrequencies = body.frequencies
+            .map((item) => normalizeFrequency(item))
+            .filter((f) => f !== "immediate");
+        }
+      } catch {
+        // empty body is fine — use calendar-due frequencies
+      }
+      const result = await runDigests(env, url, { forceFrequencies });
+      return jsonResponse({ ok: true, ...result }, 200, origin, allowed);
     }
 
     if (request.method === "POST" && url.pathname === "/news") {
@@ -528,7 +701,9 @@ export default {
       const subscribers = rows.map((row) => ({
         email: row.email,
         topics: parseTopicsJson(row.topics_json),
+        frequency: subscriberFrequency(row),
         confirmed: Boolean(row.confirmed),
+        last_digest_at: row.last_digest_at,
         created_at: row.created_at,
         updated_at: row.updated_at,
       }));
@@ -560,4 +735,16 @@ export default {
 
     return jsonResponse({ error: "Not found" }, 404, origin, allowed);
   },
+
+  async scheduled(
+    _controller: ScheduledController,
+    env: Env,
+    _ctx: ExecutionContext
+  ): Promise<void> {
+    const url = new URL(`${apiOrigin(env, new URL("https://subscribe.what-llms-can-not-do.org"))}/`);
+    const result = await runDigests(env, url);
+    console.log("Digest cron finished", result);
+  },
 };
+
+export default worker;
