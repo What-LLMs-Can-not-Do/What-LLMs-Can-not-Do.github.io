@@ -3,8 +3,6 @@ name: Notify subscribers
 on:
   push:
     branches: [main]
-    paths:
-      - "public/data.csv"
   workflow_dispatch:
     inputs:
       before:
@@ -26,9 +24,39 @@ concurrency:
 jobs:
   notify:
     runs-on: ubuntu-latest
-    # Always run a job (avoid GitHub "No jobs were run" emails from a skipped-only workflow).
+    # Job always runs — path filters / job-level if cause GitHub "No jobs were run" emails.
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check whether public/data.csv changed
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Manual run — will classify."
+            exit 0
+          fi
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.sha }}"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "No usable before SHA — will classify."
+            exit 0
+          fi
+          if git diff --name-only "$BEFORE" "$AFTER" | grep -qx 'public/data.csv'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "public/data.csv changed."
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "public/data.csv unchanged — nothing to notify."
+          fi
+
       - name: Check subscribe notify config
+        if: steps.gate.outputs.changed == 'true'
         id: config
         env:
           SUBSCRIBE_API_URL: ${{ vars.SUBSCRIBE_API_URL }}
@@ -45,13 +73,8 @@ jobs:
             echo "API=${SUBSCRIBE_API_URL%/}"
           fi
 
-      - uses: actions/checkout@v4
-        if: steps.config.outputs.configured == 'true'
-        with:
-          fetch-depth: 0
-
       - name: Classify data.csv changes
-        if: steps.config.outputs.configured == 'true'
+        if: steps.gate.outputs.changed == 'true' && steps.config.outputs.configured == 'true'
         id: classify
         shell: bash
         run: |
@@ -76,7 +99,7 @@ jobs:
           cat /tmp/notify-events.json
 
       - name: Send notify emails
-        if: steps.config.outputs.configured == 'true'
+        if: steps.gate.outputs.changed == 'true' && steps.config.outputs.configured == 'true'
         env:
           SUBSCRIBE_API_URL: ${{ vars.SUBSCRIBE_API_URL }}
           SUBSCRIBE_NOTIFY_SECRET: ${{ secrets.SUBSCRIBE_NOTIFY_SECRET }}

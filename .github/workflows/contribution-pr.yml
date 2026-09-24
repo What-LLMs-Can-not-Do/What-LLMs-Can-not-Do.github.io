@@ -15,13 +15,27 @@ concurrency:
 
 jobs:
   create-pr:
-    if: >
-      contains(github.event.issue.title, '[Table contribution]') ||
-      contains(github.event.issue.title, '[Table change]') ||
-      contains(join(github.event.issue.labels.*.name, ','), 'table-contribution')
     runs-on: ubuntu-latest
+    # Always run a job — a job-level if that skips creates "No jobs were run" emails.
     steps:
+      - name: Check if this is a table contribution
+        id: match
+        env:
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_LABELS: ${{ join(github.event.issue.labels.*.name, ',') }}
+        run: |
+          set -euo pipefail
+          if [[ "$ISSUE_TITLE" == *"[Table contribution]"* ]] \
+            || [[ "$ISSUE_TITLE" == *"[Table change]"* ]] \
+            || [[ "$ISSUE_LABELS" == *"table-contribution"* ]]; then
+            echo "match=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Not a table contribution/change issue — nothing to do."
+            echo "match=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Skip if PR already exists
+        if: steps.match.outputs.match == 'true'
         id: guard
         env:
           GH_TOKEN: ${{ github.token }}
@@ -35,10 +49,10 @@ jobs:
           fi
 
       - uses: actions/checkout@v4
-        if: steps.guard.outputs.skip != 'true'
+        if: steps.match.outputs.match == 'true' && steps.guard.outputs.skip != 'true'
 
       - name: Ensure contribution label
-        if: steps.guard.outputs.skip != 'true'
+        if: steps.match.outputs.match == 'true' && steps.guard.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -49,7 +63,7 @@ jobs:
           gh issue edit "${{ github.event.issue.number }}" --add-label "table-contribution"
 
       - name: Parse contribution JSON
-        if: steps.guard.outputs.skip != 'true'
+        if: steps.match.outputs.match == 'true' && steps.guard.outputs.skip != 'true'
         id: parse
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
@@ -72,7 +86,7 @@ jobs:
           PY
 
       - name: Download issue audio attachments
-        if: steps.guard.outputs.skip != 'true'
+        if: steps.match.outputs.match == 'true' && steps.guard.outputs.skip != 'true'
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -91,7 +105,7 @@ jobs:
           PY
 
       - name: Write audio files
-        if: steps.guard.outputs.skip != 'true'
+        if: steps.match.outputs.match == 'true' && steps.guard.outputs.skip != 'true'
         run: |
           AUDIO_FILES_JSON="$(cat /tmp/audio_files.json)"
           if [ "$AUDIO_FILES_JSON" = "[]" ]; then
@@ -106,7 +120,7 @@ jobs:
           python3 .github/scripts/contribution.py write-audio
 
       - name: Update or append CSV row
-        if: steps.guard.outputs.skip != 'true'
+        if: steps.match.outputs.match == 'true' && steps.guard.outputs.skip != 'true'
         env:
           CSV_PATH: public/data.csv
         run: |
@@ -119,7 +133,7 @@ jobs:
           fi
 
       - name: Append new models to catalog
-        if: steps.guard.outputs.skip != 'true'
+        if: steps.match.outputs.match == 'true' && steps.guard.outputs.skip != 'true'
         env:
           MODELS_CSV_PATH: public/models.csv
         run: |
@@ -133,7 +147,7 @@ jobs:
           fi
 
       - name: Append new keywords to catalog
-        if: steps.guard.outputs.skip != 'true'
+        if: steps.match.outputs.match == 'true' && steps.guard.outputs.skip != 'true'
         env:
           KEYWORDS_CSV_PATH: public/keywords.csv
         run: |
@@ -147,7 +161,7 @@ jobs:
           fi
 
       - name: Open pull request
-        if: steps.guard.outputs.skip != 'true'
+        if: steps.match.outputs.match == 'true' && steps.guard.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
