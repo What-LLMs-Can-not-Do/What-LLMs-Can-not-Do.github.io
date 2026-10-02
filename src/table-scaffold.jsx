@@ -141,6 +141,17 @@ function ArxivLogo({ className }) {
   );
 }
 
+function KaggleLogo({ className }) {
+  return (
+    <img
+      src={`${import.meta.env.BASE_URL}icons/kaggle.svg`}
+      alt=""
+      className={className}
+      aria-hidden="true"
+    />
+  );
+}
+
 function GitHubLogo({ className }) {
   return (
     <svg viewBox="0 0 16 16" className={className} aria-hidden="true" fill="currentColor">
@@ -161,6 +172,9 @@ function ExternalLinkIcon({ href }) {
     return (
       <ArxivLogo className="inline-block h-[1.05em] w-auto align-[-0.12em]" />
     );
+  }
+  if (host === "kaggle.com" || host.endsWith(".kaggle.com")) {
+    return <KaggleLogo className={iconClass} />;
   }
   if (host === "huggingface.co" || host.endsWith(".huggingface.co")) {
     return <HuggingFaceLogo className={iconClass} />;
