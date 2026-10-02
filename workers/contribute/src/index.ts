@@ -128,6 +128,20 @@ export default {
       if (!session) {
         return jsonResponse({ authenticated: false }, 200, origin, allowed);
       }
+      // Session seal can outlive a revoked/expired GitHub OAuth token — verify with GitHub.
+      try {
+        await getAuthenticatedUser(session.accessToken);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : "";
+        console.warn("auth/me token check failed:", detail);
+        return jsonResponse(
+          { authenticated: false, reason: "token_invalid" },
+          200,
+          origin,
+          allowed,
+          { "Set-Cookie": clearSessionCookie() }
+        );
+      }
       return jsonResponse(
         {
           authenticated: true,
@@ -438,6 +452,18 @@ export default {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Contribution failed";
       console.error(message);
+      if (/401|bad credentials|requires authentication|token.*expired/i.test(message)) {
+        return jsonResponse(
+          {
+            error:
+              "Your GitHub sign-in expired or was revoked. Please sign out and sign in again, then resubmit.",
+          },
+          401,
+          origin,
+          allowed,
+          { "Set-Cookie": clearSessionCookie() }
+        );
+      }
       return jsonResponse({ error: message }, 500, origin, allowed);
     }
   },

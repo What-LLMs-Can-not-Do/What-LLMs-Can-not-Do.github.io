@@ -1,12 +1,42 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SUBSCRIBE_API_URL } from "./config.js";
 
 const SESSION_KEY = "wlcd_admin_password";
+
+const TOPIC_OPTIONS = [
+  { id: "news", label: "news" },
+  { id: "additions", label: "additions" },
+  { id: "changes", label: "changes" },
+  { id: "debug", label: "debug" },
+];
+
+const FREQUENCY_OPTIONS = [
+  "immediate",
+  "daily",
+  "weekly",
+  "monthly",
+  "yearly",
+];
+
+function topicsKey(topics) {
+  return [...(topics || [])].sort().join(",");
+}
+
+function rowDraft(row) {
+  return {
+    topics: [...(row.topics || [])],
+    frequency: row.frequency || "weekly",
+  };
+}
 
 export default function Admin() {
   const [password, setPassword] = useState(() => sessionStorage.getItem(SESSION_KEY) || "");
   const [input, setInput] = useState("");
   const [subscribers, setSubscribers] = useState([]);
+  const [drafts, setDrafts] = useState({});
+  const [savingEmail, setSavingEmail] = useState("");
+  const [deletingEmail, setDeletingEmail] = useState("");
+  const [rowErrors, setRowErrors] = useState({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -15,6 +45,16 @@ export default function Admin() {
   const [newsSending, setNewsSending] = useState(false);
   const [newsError, setNewsError] = useState("");
   const [newsResult, setNewsResult] = useState(null);
+
+  const applySubscribers = (rows) => {
+    setSubscribers(rows);
+    const nextDrafts = {};
+    for (const row of rows) {
+      nextDrafts[row.email] = rowDraft(row);
+    }
+    setDrafts(nextDrafts);
+    setRowErrors({});
+  };
 
   const load = async (pwd) => {
     if (!SUBSCRIBE_API_URL) {
@@ -39,11 +79,12 @@ export default function Admin() {
       }
       sessionStorage.setItem(SESSION_KEY, pwd.trim());
       setPassword(pwd.trim());
-      setSubscribers(result.subscribers || []);
+      applySubscribers(result.subscribers || []);
     } catch (err) {
       sessionStorage.removeItem(SESSION_KEY);
       setPassword("");
       setSubscribers([]);
+      setDrafts({});
       setError(err instanceof Error ? err.message : "Failed to load subscribers");
     } finally {
       setLoading(false);
@@ -67,11 +108,151 @@ export default function Admin() {
     setPassword("");
     setInput("");
     setSubscribers([]);
+    setDrafts({});
+    setRowErrors({});
     setError("");
     setNewsSubject("");
     setNewsBody("");
     setNewsError("");
     setNewsResult(null);
+  };
+
+  const toggleTopic = (email, topicId) => {
+    setDrafts((prev) => {
+      const current = prev[email] || { topics: [], frequency: "weekly" };
+      const set = new Set(current.topics);
+      if (set.has(topicId)) set.delete(topicId);
+      else set.add(topicId);
+      return {
+        ...prev,
+        [email]: {
+          ...current,
+          topics: TOPIC_OPTIONS.map((t) => t.id).filter((id) => set.has(id)),
+        },
+      };
+    });
+    setRowErrors((prev) => {
+      if (!prev[email]) return prev;
+      const next = { ...prev };
+      delete next[email];
+      return next;
+    });
+  };
+
+  const setFrequency = (email, frequency) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [email]: {
+        ...(prev[email] || { topics: [], frequency: "weekly" }),
+        frequency,
+      },
+    }));
+    setRowErrors((prev) => {
+      if (!prev[email]) return prev;
+      const next = { ...prev };
+      delete next[email];
+      return next;
+    });
+  };
+
+  const isDirty = (row) => {
+    const draft = drafts[row.email];
+    if (!draft) return false;
+    return (
+      topicsKey(draft.topics) !== topicsKey(row.topics) ||
+      (draft.frequency || "weekly") !== (row.frequency || "weekly")
+    );
+  };
+
+  const saveRow = async (row) => {
+    const draft = drafts[row.email];
+    if (!draft || !SUBSCRIBE_API_URL) return;
+
+    setSavingEmail(row.email);
+    setRowErrors((prev) => {
+      const next = { ...prev };
+      delete next[row.email];
+      return next;
+    });
+    try {
+      const endpoint =
+        SUBSCRIBE_API_URL.replace(/\/$/, "") + "/admin/subscribers/update";
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Password": password,
+        },
+        body: JSON.stringify({
+          email: row.email,
+          topics: draft.topics,
+          frequency: draft.frequency,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.error || `Save failed (${response.status})`);
+      }
+      const updated = result.subscriber;
+      setSubscribers((prev) =>
+        prev.map((item) => (item.email === row.email ? { ...item, ...updated } : item))
+      );
+      setDrafts((prev) => ({
+        ...prev,
+        [row.email]: rowDraft(updated),
+      }));
+    } catch (err) {
+      setRowErrors((prev) => ({
+        ...prev,
+        [row.email]: err instanceof Error ? err.message : "Save failed",
+      }));
+    } finally {
+      setSavingEmail("");
+    }
+  };
+
+  const deleteRow = async (row) => {
+    if (!SUBSCRIBE_API_URL) return;
+    const confirmed = window.confirm(
+      `Delete ${row.email} from the subscriber list? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeletingEmail(row.email);
+    setRowErrors((prev) => {
+      const next = { ...prev };
+      delete next[row.email];
+      return next;
+    });
+    try {
+      const endpoint =
+        SUBSCRIBE_API_URL.replace(/\/$/, "") + "/admin/subscribers/delete";
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Password": password,
+        },
+        body: JSON.stringify({ email: row.email }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.error || `Delete failed (${response.status})`);
+      }
+      setSubscribers((prev) => prev.filter((item) => item.email !== row.email));
+      setDrafts((prev) => {
+        const next = { ...prev };
+        delete next[row.email];
+        return next;
+      });
+    } catch (err) {
+      setRowErrors((prev) => ({
+        ...prev,
+        [row.email]: err instanceof Error ? err.message : "Delete failed",
+      }));
+    } finally {
+      setDeletingEmail("");
+    }
   };
 
   const sendNews = async (event) => {
@@ -114,12 +295,16 @@ export default function Admin() {
     }
   };
 
-  const confirmedNewsCount = subscribers.filter(
-    (row) => row.confirmed && (row.topics || []).includes("news")
-  ).length;
+  const confirmedNewsCount = useMemo(
+    () =>
+      subscribers.filter(
+        (row) => row.confirmed && (row.topics || []).includes("news")
+      ).length,
+    [subscribers]
+  );
 
   return (
-    <main className="mx-auto max-w-4xl px-4 py-10 sm:px-8">
+    <main className="mx-auto max-w-6xl px-4 py-10 sm:px-8">
       <h1 className="!mt-0 text-3xl font-semibold tracking-tight text-slate-900">Admin</h1>
 
       {!password ? (
@@ -179,6 +364,7 @@ export default function Admin() {
               {loading
                 ? "Loading…"
                 : `${subscribers.length} subscriber${subscribers.length === 1 ? "" : "s"}`}
+              . Editing topics or frequency emails the subscriber when they are confirmed.
             </p>
 
             {error ? (
@@ -197,34 +383,100 @@ export default function Admin() {
                     <th className="px-3 py-2 font-medium">Confirmed</th>
                     <th className="px-3 py-2 font-medium">Created</th>
                     <th className="px-3 py-2 font-medium">Updated</th>
+                    <th className="px-3 py-2 font-medium"> </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 bg-white">
                   {subscribers.length === 0 && !loading ? (
                     <tr>
-                      <td colSpan={6} className="px-3 py-6 text-center text-slate-500">
+                      <td colSpan={7} className="px-3 py-6 text-center text-slate-500">
                         No subscribers yet.
                       </td>
                     </tr>
                   ) : (
-                    subscribers.map((row) => (
-                      <tr key={row.email}>
-                        <td className="px-3 py-2 font-medium text-slate-900">{row.email}</td>
-                        <td className="px-3 py-2 text-slate-700">
-                          {(row.topics || []).join(", ") || "—"}
-                        </td>
-                        <td className="px-3 py-2 text-slate-700">{row.frequency || "weekly"}</td>
-                        <td className="px-3 py-2 text-slate-700">
-                          {row.confirmed ? "yes" : "no"}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-slate-500">
-                          {formatDate(row.created_at)}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-slate-500">
-                          {formatDate(row.updated_at)}
-                        </td>
-                      </tr>
-                    ))
+                    subscribers.map((row) => {
+                      const draft = drafts[row.email] || rowDraft(row);
+                      const dirty = isDirty(row);
+                      const saving = savingEmail === row.email;
+                      const deleting = deletingEmail === row.email;
+                      const busy = saving || deleting;
+                      return (
+                        <tr key={row.email}>
+                          <td className="px-3 py-2 align-top font-medium text-slate-900">
+                            {row.email}
+                            {rowErrors[row.email] ? (
+                              <p className="mt-1 text-xs font-normal text-red-600">
+                                {rowErrors[row.email]}
+                              </p>
+                            ) : null}
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            <div className="flex flex-col gap-1">
+                              {TOPIC_OPTIONS.map((topic) => (
+                                <label
+                                  key={topic.id}
+                                  className="inline-flex items-center gap-2 text-xs font-normal normal-case tracking-normal text-slate-700"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="h-3.5 w-3.5 rounded border-slate-300 text-slate-900 focus:ring-slate-500"
+                                    checked={draft.topics.includes(topic.id)}
+                                    onChange={() => toggleTopic(row.email, topic.id)}
+                                    disabled={busy}
+                                  />
+                                  {topic.label}
+                                </label>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            <select
+                              value={draft.frequency}
+                              onChange={(event) =>
+                                setFrequency(row.email, event.target.value)
+                              }
+                              disabled={busy}
+                              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                            >
+                              {FREQUENCY_OPTIONS.map((freq) => (
+                                <option key={freq} value={freq}>
+                                  {freq}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-3 py-2 align-top text-slate-700">
+                            {row.confirmed ? "yes" : "no"}
+                          </td>
+                          <td className="px-3 py-2 align-top whitespace-nowrap text-slate-500">
+                            {formatDate(row.created_at)}
+                          </td>
+                          <td className="px-3 py-2 align-top whitespace-nowrap text-slate-500">
+                            {formatDate(row.updated_at)}
+                          </td>
+                          <td className="px-3 py-2 align-top">
+                            <div className="flex flex-col gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => saveRow(row)}
+                                disabled={!dirty || busy}
+                                className="rounded-md bg-slate-900 px-2.5 py-1 text-xs font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                {saving ? "Saving…" : "Save"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deleteRow(row)}
+                                disabled={busy}
+                                className="rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                {deleting ? "Deleting…" : "Delete"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

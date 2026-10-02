@@ -367,11 +367,16 @@ export default function Contribute() {
             avatar_url: data.avatar_url || "",
           });
         } else {
+          // Drop a stale sealed session (e.g. GitHub token expired/revoked).
+          clearStoredSession();
           setGhUser(null);
         }
       })
       .catch(() => {
-        if (!cancelled) setGhUser(null);
+        if (!cancelled) {
+          clearStoredSession();
+          setGhUser(null);
+        }
       })
       .finally(() => {
         if (!cancelled) setGhAuthLoading(false);
@@ -749,6 +754,10 @@ export default function Contribute() {
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
+        if (response.status === 401) {
+          clearStoredSession();
+          setGhUser(null);
+        }
         throw new Error(result.error || `Submission failed (${response.status})`);
       }
       if (!result.pr_url) {

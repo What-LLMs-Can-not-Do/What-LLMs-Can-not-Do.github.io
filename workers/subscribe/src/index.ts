@@ -1,5 +1,6 @@
 import {
   confirmSubscription,
+  deleteSubscriberByEmail,
   getByEmail,
   insertPendingEvent,
   listAllSubscribers,
@@ -10,6 +11,7 @@ import {
   prunePendingEventsOlderThan,
   subscriberFrequency,
   unsubscribeAll,
+  updateSubscriberPrefs,
   upsertSubscription,
   type NotifyEventInput,
 } from "./db";
@@ -23,6 +25,7 @@ import {
 import {
   alreadyDigestedToday,
   frequenciesDueOn,
+  frequencyLabel,
   normalizeFrequency,
   type Frequency,
 } from "./frequencies";
@@ -31,8 +34,10 @@ import {
   buildSingleNotifyContent,
 } from "./notify_content";
 import {
+  isPublicTopic,
   mergePublicTopicsWithInternal,
   normalizePublicTopics,
+  normalizeTopics,
   parseTopicsJson,
   type Topic,
 } from "./topics";
@@ -162,6 +167,87 @@ async function sendConfirmEmail(
     text,
     html,
     replyTo: env.REPLY_TO?.trim() || undefined,
+  });
+}
+
+function topicLabel(topic: Topic): string {
+  switch (topic) {
+    case "news":
+      return "News";
+    case "additions":
+      return "Additions to the table";
+    case "changes":
+      return "Changes to the table";
+    case "debug":
+      return "Debug";
+  }
+}
+
+function publicTopicsEqual(a: Topic[], b: Topic[]): boolean {
+  const left = a.filter(isPublicTopic).join(",");
+  const right = b.filter(isPublicTopic).join(",");
+  return left === right;
+}
+
+async function sendPreferencesChangedEmail(
+  env: Env,
+  requestUrl: URL,
+  options: {
+    email: string;
+    unsubToken: string;
+    topics: Topic[];
+    frequency: Frequency;
+  }
+): Promise<void> {
+  const site = siteOrigin(env);
+  const subscribeUrl = `${site}/subscribe`;
+  const unsub = unsubUrl(env, requestUrl, options.unsubToken);
+  const publicTopics = options.topics.filter(isPublicTopic);
+  const topicList =
+    publicTopics.length > 0
+      ? publicTopics.map((t) => topicLabel(t)).join(", ")
+      : "(none)";
+  const freq = frequencyLabel(options.frequency);
+  const subject = "Your WLCD subscription preferences were updated";
+  const text = [
+    "Hi,",
+    "",
+    "Your email subscription preferences for What LLMs Can(not) Do were just updated:",
+    "",
+    `Topics: ${topicList}`,
+    `Frequency for additions & changes: ${freq}`,
+    "",
+    `You can change them again at: ${subscribeUrl}`,
+    "",
+    "If you did not make this change, you can unsubscribe here:",
+    unsub,
+    "",
+    site,
+  ].join("\n");
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8" /><title>${escapeHtml(subject)}</title></head>
+<body style="font-family: system-ui, -apple-system, Segoe UI, sans-serif; font-size: 16px; line-height: 1.5; color: #0f172a;">
+  <p>Hi,</p>
+  <p>Your email subscription preferences for <strong>What LLMs Can(not) Do</strong> were just updated:</p>
+  <ul>
+    <li><strong>Topics:</strong> ${escapeHtml(topicList)}</li>
+    <li><strong>Frequency for additions &amp; changes:</strong> ${escapeHtml(freq)}</li>
+  </ul>
+  <p>You can change them again at <a href="${escapeHtml(subscribeUrl)}">${escapeHtml(subscribeUrl)}</a>.</p>
+  <p>If you did not make this change, <a href="${escapeHtml(unsub)}">unsubscribe</a>.</p>
+  <p><a href="${escapeHtml(site)}">${escapeHtml(site)}</a></p>
+</body>
+</html>`;
+  await sendEmail({
+    apiKey: env.RESEND_API_KEY,
+    from: env.FROM_EMAIL,
+    to: options.email,
+    subject,
+    text,
+    html,
+    replyTo: env.REPLY_TO?.trim() || undefined,
+    unsubscribeUrl: unsub,
   });
 }
 
@@ -428,6 +514,11 @@ const worker = {
         publicTopics,
         existing ? parseTopicsJson(existing.topics_json) : []
       );
+      const previousTopics = existing ? parseTopicsJson(existing.topics_json) : [];
+      const previousFrequency = existing ? subscriberFrequency(existing) : null;
+      const prefsChanged =
+        alreadyConfirmed &&
+        (previousFrequency !== frequency || !publicTopicsEqual(previousTopics, topics));
 
       await upsertSubscription(env.DB, {
         email,
@@ -452,6 +543,20 @@ const worker = {
           origin,
           allowed
         );
+      }
+
+      if (prefsChanged) {
+        try {
+          await sendPreferencesChangedEmail(env, url, {
+            email,
+            unsubToken,
+            topics,
+            frequency,
+          });
+        } catch (err) {
+          console.error("Failed to send preferences-changed email:", err);
+          // Preferences were saved; still report success to the form.
+        }
       }
 
       return jsonResponse(
@@ -713,6 +818,120 @@ const worker = {
         origin,
         allowed
       );
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/subscribers/update") {
+      if (origin && !isAllowedOrigin(origin, allowed)) {
+        return jsonResponse({ error: "Origin not allowed" }, 403, origin, allowed);
+      }
+      if (!env.ADMIN_PASSWORD?.trim()) {
+        return jsonResponse(
+          { error: "Server misconfigured: missing ADMIN_PASSWORD" },
+          500,
+          origin,
+          allowed
+        );
+      }
+      if (!requireAdminPassword(request, env)) {
+        return jsonResponse({ error: "Unauthorized" }, 401, origin, allowed);
+      }
+
+      let body: { email?: string; topics?: unknown; frequency?: unknown };
+      try {
+        body = (await request.json()) as typeof body;
+      } catch {
+        return jsonResponse({ error: "Invalid JSON body" }, 400, origin, allowed);
+      }
+
+      const email = normalizeEmail(body.email || "");
+      if (!email) {
+        return jsonResponse({ error: "email is required" }, 400, origin, allowed);
+      }
+      const topics = normalizeTopics(body.topics);
+      const frequency = normalizeFrequency(body.frequency);
+
+      const existing = await getByEmail(env.DB, email);
+      if (!existing) {
+        return jsonResponse({ error: "Subscriber not found" }, 404, origin, allowed);
+      }
+
+      const previousTopics = parseTopicsJson(existing.topics_json);
+      const previousFrequency = subscriberFrequency(existing);
+      const prefsChanged =
+        previousFrequency !== frequency ||
+        previousTopics.join(",") !== topics.join(",");
+
+      const updated = await updateSubscriberPrefs(env.DB, email, topics, frequency);
+      if (!updated) {
+        return jsonResponse({ error: "Subscriber not found" }, 404, origin, allowed);
+      }
+
+      if (prefsChanged && updated.confirmed) {
+        try {
+          await sendPreferencesChangedEmail(env, url, {
+            email: updated.email,
+            unsubToken: updated.unsub_token,
+            topics,
+            frequency,
+          });
+        } catch (err) {
+          console.error("Failed to send preferences-changed email:", err);
+        }
+      }
+
+      return jsonResponse(
+        {
+          ok: true,
+          subscriber: {
+            email: updated.email,
+            topics,
+            frequency,
+            confirmed: Boolean(updated.confirmed),
+            last_digest_at: updated.last_digest_at,
+            created_at: updated.created_at,
+            updated_at: updated.updated_at,
+          },
+        },
+        200,
+        origin,
+        allowed
+      );
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/subscribers/delete") {
+      if (origin && !isAllowedOrigin(origin, allowed)) {
+        return jsonResponse({ error: "Origin not allowed" }, 403, origin, allowed);
+      }
+      if (!env.ADMIN_PASSWORD?.trim()) {
+        return jsonResponse(
+          { error: "Server misconfigured: missing ADMIN_PASSWORD" },
+          500,
+          origin,
+          allowed
+        );
+      }
+      if (!requireAdminPassword(request, env)) {
+        return jsonResponse({ error: "Unauthorized" }, 401, origin, allowed);
+      }
+
+      let body: { email?: string };
+      try {
+        body = (await request.json()) as typeof body;
+      } catch {
+        return jsonResponse({ error: "Invalid JSON body" }, 400, origin, allowed);
+      }
+
+      const email = normalizeEmail(body.email || "");
+      if (!email) {
+        return jsonResponse({ error: "email is required" }, 400, origin, allowed);
+      }
+
+      const deleted = await deleteSubscriberByEmail(env.DB, email);
+      if (!deleted) {
+        return jsonResponse({ error: "Subscriber not found" }, 404, origin, allowed);
+      }
+
+      return jsonResponse({ ok: true, deleted: email }, 200, origin, allowed);
     }
 
     if (request.method === "POST" && url.pathname === "/admin/news") {

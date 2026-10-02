@@ -186,6 +186,43 @@ export async function listAllSubscribers(db: D1Database): Promise<
   return results || [];
 }
 
+export async function updateSubscriberPrefs(
+  db: D1Database,
+  email: string,
+  topics: Topic[],
+  frequency: Frequency
+): Promise<SubscriberRow | null> {
+  const row = await getByEmail(db, email);
+  if (!row) return null;
+  const now = new Date().toISOString();
+  const topicsSerialized = topicsJson(topics);
+  await db
+    .prepare(
+      `UPDATE subscribers
+       SET topics_json = ?, frequency = ?, updated_at = ?
+       WHERE email = ?`
+    )
+    .bind(topicsSerialized, frequency, now, email)
+    .run();
+  return {
+    ...row,
+    topics_json: topicsSerialized,
+    frequency,
+    updated_at: now,
+  };
+}
+
+export async function deleteSubscriberByEmail(
+  db: D1Database,
+  email: string
+): Promise<boolean> {
+  const result = await db
+    .prepare(`DELETE FROM subscribers WHERE email = ?`)
+    .bind(email)
+    .run();
+  return Number(result.meta.changes || 0) > 0;
+}
+
 export async function insertPendingEvent(
   db: D1Database,
   event: NotifyEventInput
