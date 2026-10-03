@@ -51,7 +51,7 @@ LONG_FIELDS = {"Summary", "Abstract", "Benchmark Example", "Comments?", "Model(s
 # Extra fields compared for change emails when they differ.
 EXPAND_FIELDS = ("Abstract", "Benchmark Example")
 
-# Safety cap only — avoid multi-megabyte cells blowing up Resend payloads.
+# Safety cap only for change diffs of huge cells (Abstract etc.).
 MAX_FIELD_CHARS = 20000
 
 # Never include in change lists (noise / derived).
@@ -93,8 +93,13 @@ def parse_titled_rows(text: str) -> Dict[str, Dict[str, str]]:
     return rows
 
 
+def normalize_text(value: str) -> str:
+    """Collapse whitespace; do not truncate (emails show full Summary etc.)."""
+    return " ".join((value or "").split())
+
+
 def clip(value: str, limit: int = MAX_FIELD_CHARS) -> str:
-    text = " ".join((value or "").split())
+    text = normalize_text(value)
     if len(text) <= limit:
         return text
     return text[: limit - 1].rstrip() + "…"
@@ -103,7 +108,7 @@ def clip(value: str, limit: int = MAX_FIELD_CHARS) -> str:
 def summarize_row(row: Dict[str, str]) -> str:
     summary = (row.get("Summary") or "").strip()
     if summary:
-        return clip(summary)
+        return normalize_text(summary)
     return ""
 
 
@@ -113,7 +118,8 @@ def row_highlights(row: Dict[str, str]) -> List[dict]:
         raw = (row.get(csv_field) or "").strip()
         if not raw:
             continue
-        highlights.append({"field": label, "value": clip(raw)})
+        # Never truncate addition email fields — especially Summary.
+        highlights.append({"field": label, "value": normalize_text(raw)})
     return highlights
 
 
