@@ -62,10 +62,9 @@ export default function Home() {
           all of the research into this and make it easily accessible for anyone
           interested.
         </p>
-        <p className="text-sm leading-relaxed text-slate-600">
-          This project is also aiming to be a workshop at *ACL venues,
-          where we will accept submissions on the capabilities of frontier LLMs.
-          We&apos;ll keep you posted on that!
+        <p className="mt-6 text-sm leading-relaxed text-slate-600">
+          We&apos;ve been accepted as a workshop for COLING 2027! More details
+          coming soon. See you in Macau!
         </p>
       </section>
 
