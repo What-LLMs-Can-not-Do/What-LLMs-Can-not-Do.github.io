@@ -23,6 +23,21 @@ function recordToObject(headers: string[], fields: string[]): Record<string, str
   return row;
 }
 
+/** Find the UI-style 1-based ID of a titled row by paper title (case-insensitive). */
+export function findTitledRowIdByPaperTitle(
+  csvText: string,
+  paperTitle: string
+): string | null {
+  const wanted = paperTitle.trim().toLowerCase();
+  if (!wanted) return null;
+  for (const entry of parseTitledTableRows(csvText)) {
+    if ((entry.row["Paper title"] || "").trim().toLowerCase() === wanted) {
+      return entry.id;
+    }
+  }
+  return null;
+}
+
 /** Titled data rows with UI-style 1-based IDs (among titled rows). */
 export function parseTitledTableRows(
   csvText: string
@@ -126,15 +141,9 @@ export function parseContributionFromCsvDiff(options: {
   const changed: { baseId: string; head: (typeof headRows)[0]; base: (typeof headRows)[0] }[] =
     [];
 
-  // Prefer ID (row position) so title edits still count as changes.
+  // Match by paper title (stable across other merges). ID position shifts when
+  // rows are added above, so it must not be the primary key.
   for (const head of headRows) {
-    const byId = baseById.get(head.id);
-    if (byId) {
-      if (rowFingerprint(byId.row) !== rowFingerprint(head.row)) {
-        changed.push({ baseId: byId.id, head, base: byId });
-      }
-      continue;
-    }
     const key = (head.row["Paper title"] || "").trim().toLowerCase();
     if (!key) continue;
     const byTitle = baseByTitle.get(key);

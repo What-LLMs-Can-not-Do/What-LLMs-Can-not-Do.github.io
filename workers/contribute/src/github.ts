@@ -345,6 +345,9 @@ export type PullSummary = {
   body: string | null;
   draft: boolean;
   maintainer_can_modify: boolean;
+  /** Present on single-PR fetches; null while GitHub computes. */
+  mergeable?: boolean | null;
+  mergeable_state?: string;
 };
 
 export async function listOpenPulls(

@@ -185,7 +185,14 @@ export default function Review() {
       setPresetExtras(null);
       await loadList(password);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to merge pull request");
+      const message = err instanceof Error ? err.message : "Failed to merge pull request";
+      if (/merge conflict/i.test(message)) {
+        setFormError(
+          `${message} Click “Save to PR” to rebuild onto current main, then Merge again.`
+        );
+      } else {
+        setFormError(message);
+      }
     } finally {
       setMerging(false);
     }

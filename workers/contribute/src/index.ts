@@ -22,7 +22,7 @@ import {
   type Env,
   type TreeFile,
 } from "./github";
-import { parseContributionFromCsvDiff } from "./review";
+import { findTitledRowIdByPaperTitle, parseContributionFromCsvDiff } from "./review";
 import {
   clearSessionCookie,
   readCookie,
@@ -117,6 +117,13 @@ function repoName(env: Env): string {
   return (env.GITHUB_REPO || "What-LLMs-Can-not-Do/What-LLMs-Can-not-Do.github.io").trim();
 }
 
+function parsedBaselineTitleFromPr(title: string | null | undefined): string | null {
+  const m = (title || "").match(
+    /^(?:Table (?:addition|change)|Add table entry|Update table entry(?: #\d+)?):\s*(.+)$/i
+  );
+  return m?.[1]?.trim() || null;
+}
+
 function requireAdmin(
   request: Request,
   env: Env,
@@ -161,6 +168,167 @@ function parsePrNumber(pathname: string): number | null {
   if (!match) return null;
   const n = Number.parseInt(match[1], 10);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Rebuild contribution file updates on top of the current base branch tip.
+ * For changes, resolves the target row by paper title when possible (IDs shift
+ * after other table merges).
+ */
+async function buildContributionFiles(options: {
+  token: string;
+  repo: string;
+  baseRef: string;
+  data: ContributionData;
+  audioEntries?: { name: string; bytes: Uint8Array }[];
+  /** Prefer this title when looking up the row to change on current main. */
+  lookupTitle?: string;
+}): Promise<{
+  files: TreeFile[];
+  paperTitle: string;
+  isChange: boolean;
+  rowChanged: boolean;
+}> {
+  const { token, repo, baseRef, data, audioEntries = [], lookupTitle } = options;
+  const contributionType = String(data.contribution_type || "addition").toLowerCase();
+  const isChange = contributionType === "change";
+
+  const dataFile = await getFileContent(token, repo, "public/data.csv", baseRef);
+  if (!dataFile) {
+    throw new Error("Could not read public/data.csv from base branch");
+  }
+
+  let paperTitle: string;
+  let dataCsvText: string;
+  let rowChanged = true;
+
+  if (isChange) {
+    const titleHint =
+      String(lookupTitle || data["Paper title"] || "").trim() ||
+      String(data["Paper title"] || "").trim();
+    const byTitle = titleHint
+      ? findTitledRowIdByPaperTitle(dataFile.content, titleHint)
+      : null;
+    const rowId = byTitle || String(data.ID ?? "").trim();
+    if (!rowId) {
+      throw new Error(
+        `Could not find table row to update${titleHint ? ` for “${titleHint}”` : ""} on ${baseRef}`
+      );
+    }
+    const updated = updateDataCsv(dataFile.content, rowId, data);
+    dataCsvText = updated.text;
+    paperTitle = updated.paperTitle;
+    rowChanged = updated.changed;
+  } else {
+    // Avoid duplicating a row that already landed on main under the same title.
+    const existingId = findTitledRowIdByPaperTitle(
+      dataFile.content,
+      String(data["Paper title"] || "")
+    );
+    if (existingId) {
+      const updated = updateDataCsv(dataFile.content, existingId, data);
+      dataCsvText = updated.text;
+      paperTitle = updated.paperTitle;
+      rowChanged = updated.changed;
+    } else {
+      const appended = appendDataCsv(dataFile.content, data);
+      dataCsvText = appended.text;
+      paperTitle = appended.paperTitle;
+    }
+  }
+
+  const modelsFile = await getFileContent(token, repo, "public/models.csv", baseRef);
+  const modelsResult = appendModelsCsv(
+    modelsFile?.content ?? "",
+    (data.new_models as unknown[]) || []
+  );
+  const keywordsFile = await getFileContent(token, repo, "public/keywords.csv", baseRef);
+  const keywordsResult = appendKeywordsCsv(
+    keywordsFile?.content ?? "",
+    (data.new_keywords as unknown[]) || []
+  );
+
+  const files: TreeFile[] = [];
+  files.push({ path: "public/data.csv", content: dataCsvText, encoding: "utf-8" });
+  if (modelsResult.added.length) {
+    files.push({
+      path: "public/models.csv",
+      content: modelsResult.text,
+      encoding: "utf-8",
+    });
+  } else if (modelsFile) {
+    files.push({
+      path: "public/models.csv",
+      content: modelsFile.content,
+      encoding: "utf-8",
+    });
+  }
+  if (keywordsResult.added.length) {
+    files.push({
+      path: "public/keywords.csv",
+      content: keywordsResult.text,
+      encoding: "utf-8",
+    });
+  } else if (keywordsFile) {
+    files.push({
+      path: "public/keywords.csv",
+      content: keywordsFile.content,
+      encoding: "utf-8",
+    });
+  }
+  for (const audio of audioEntries) {
+    files.push({
+      path: `public/audio/${audio.name}`,
+      content: audio.bytes,
+      encoding: "binary",
+    });
+  }
+
+  return {
+    files,
+    paperTitle,
+    isChange,
+    rowChanged:
+      rowChanged ||
+      modelsResult.added.length > 0 ||
+      keywordsResult.added.length > 0 ||
+      audioEntries.length > 0,
+  };
+}
+
+async function rebasePullOntoBase(options: {
+  token: string;
+  repo: string;
+  pr: Awaited<ReturnType<typeof getPull>>;
+  data: ContributionData;
+  lookupTitle?: string;
+  commitMessage: string;
+}): Promise<{ commitSha: string; paperTitle: string }> {
+  const { token, repo, pr, data, lookupTitle, commitMessage } = options;
+  if (pr.head.repo == null) {
+    throw new Error("PR head repository is unavailable (fork deleted?)");
+  }
+  const baseRef = pr.base.ref || "main";
+  const built = await buildContributionFiles({
+    token,
+    repo,
+    baseRef,
+    data,
+    lookupTitle,
+  });
+  const { commitSha } = await commitFilesToBranch({
+    token,
+    headRepo: pr.head.repo.full_name,
+    branchName: pr.head.ref,
+    headSha: pr.head.sha,
+    commitMessage,
+    files: built.files,
+    author: {
+      name: "WLCD Review",
+      email: "noreply@what-llms-can-not-do.org",
+    },
+  });
+  return { commitSha, paperTitle: built.paperTitle };
 }
 
 async function collectAudioFromForm(
@@ -382,57 +550,19 @@ export default {
           if (audioResult instanceof Response) return audioResult;
           const { audioEntries } = audioResult;
 
-          const contributionType = String(data.contribution_type || "addition").toLowerCase();
-          const isChange = contributionType === "change";
           const baseRef = pr.base.ref || "main";
-          const headRepo = pr.head.repo.full_name;
-          const headRef = pr.head.ref;
-          const headSha = pr.head.sha;
+          const built = await buildContributionFiles({
+            token,
+            repo,
+            baseRef,
+            data,
+            audioEntries,
+            lookupTitle:
+              String(data["Paper title"] || "").trim() ||
+              (parsedBaselineTitleFromPr(pr.title) ?? undefined),
+          });
 
-          // Rebuild contribution from upstream base so edits replace the PR cleanly.
-          const dataFile = await getFileContent(token, repo, "public/data.csv", baseRef);
-          if (!dataFile) {
-            return jsonResponse(
-              { error: "Could not read public/data.csv from base branch" },
-              500,
-              origin,
-              allowed
-            );
-          }
-
-          let paperTitle: string;
-          let dataCsvText: string;
-          let rowChanged = true;
-          if (isChange) {
-            const rowId = String(data.ID ?? "").trim();
-            const updated = updateDataCsv(dataFile.content, rowId, data);
-            dataCsvText = updated.text;
-            paperTitle = updated.paperTitle;
-            rowChanged = updated.changed;
-          } else {
-            const appended = appendDataCsv(dataFile.content, data);
-            dataCsvText = appended.text;
-            paperTitle = appended.paperTitle;
-          }
-
-          const modelsFile = await getFileContent(token, repo, "public/models.csv", baseRef);
-          const modelsResult = appendModelsCsv(
-            modelsFile?.content ?? "",
-            (data.new_models as unknown[]) || []
-          );
-          const keywordsFile = await getFileContent(token, repo, "public/keywords.csv", baseRef);
-          const keywordsResult = appendKeywordsCsv(
-            keywordsFile?.content ?? "",
-            (data.new_keywords as unknown[]) || []
-          );
-
-          if (
-            isChange &&
-            !rowChanged &&
-            !modelsResult.added.length &&
-            !keywordsResult.added.length &&
-            !audioEntries.length
-          ) {
+          if (!built.rowChanged) {
             return jsonResponse(
               {
                 error:
@@ -444,62 +574,24 @@ export default {
             );
           }
 
-          const files: TreeFile[] = [];
-          files.push({ path: "public/data.csv", content: dataCsvText, encoding: "utf-8" });
-          if (modelsResult.added.length) {
-            files.push({
-              path: "public/models.csv",
-              content: modelsResult.text,
-              encoding: "utf-8",
-            });
-          } else if (modelsFile) {
-            // Keep head catalogs aligned with base when no new models (drop stale additions).
-            files.push({
-              path: "public/models.csv",
-              content: modelsFile.content,
-              encoding: "utf-8",
-            });
-          }
-          if (keywordsResult.added.length) {
-            files.push({
-              path: "public/keywords.csv",
-              content: keywordsResult.text,
-              encoding: "utf-8",
-            });
-          } else if (keywordsFile) {
-            files.push({
-              path: "public/keywords.csv",
-              content: keywordsFile.content,
-              encoding: "utf-8",
-            });
-          }
-
-          for (const audio of audioEntries) {
-            files.push({
-              path: `public/audio/${audio.name}`,
-              content: audio.bytes,
-              encoding: "binary",
-            });
-          }
-
-          const kind = isChange ? "change" : "addition";
-          const commitMessage = `Review edit: Table ${kind}: ${paperTitle}`;
+          const kind = built.isChange ? "change" : "addition";
+          const commitMessage = `Review edit: Table ${kind}: ${built.paperTitle}`;
           const { commitSha } = await commitFilesToBranch({
             token,
-            headRepo,
-            branchName: headRef,
-            headSha,
+            headRepo: pr.head.repo.full_name,
+            branchName: pr.head.ref,
+            headSha: pr.head.sha,
             commitMessage,
-            files,
+            files: built.files,
             author: {
               name: "WLCD Review",
               email: "noreply@what-llms-can-not-do.org",
             },
           });
 
-          const desiredTitle = isChange
-            ? `Table change: ${paperTitle}`
-            : `Table addition: ${paperTitle}`;
+          const desiredTitle = built.isChange
+            ? `Table change: ${built.paperTitle}`
+            : `Table addition: ${built.paperTitle}`;
           if ((pr.title || "") !== desiredTitle) {
             try {
               await updatePull(token, repo, prNumber, { title: desiredTitle });
@@ -517,7 +609,7 @@ export default {
               pr_number: prNumber,
               pr_url: pr.html_url,
               commit_sha: commitSha,
-              paper_title: paperTitle,
+              paper_title: built.paperTitle,
             },
             200,
             origin,
@@ -526,7 +618,7 @@ export default {
         }
 
         if (request.method === "POST" && url.pathname === `/review/prs/${prNumber}/merge`) {
-          const pr = await getPull(token, repo, prNumber);
+          let pr = await getPull(token, repo, prNumber);
           if (!isTableContributionPull(pr)) {
             return jsonResponse(
               { error: "Pull request is not a table contribution" },
@@ -535,21 +627,122 @@ export default {
               allowed
             );
           }
-          const result = await mergePull({
-            token,
-            repo,
-            number: prNumber,
-            commitTitle: pr.title || undefined,
-            mergeMethod: "merge",
-          });
+
+          const tryMerge = async () =>
+            mergePull({
+              token,
+              repo,
+              number: prNumber,
+              commitTitle: pr.title || undefined,
+              mergeMethod: "merge",
+            });
+
+          let rebased = false;
+          let rebaseSha: string | undefined;
+          const needsRebase =
+            pr.mergeable === false ||
+            pr.mergeable_state === "dirty" ||
+            pr.mergeable_state === "unstable";
+
+          const rebaseFromHead = async () => {
+            if (pr.head.repo == null) {
+              throw new Error("PR head repository is unavailable (fork deleted?)");
+            }
+            const baseRef = pr.base.ref || "main";
+            const headRepo = pr.head.repo.full_name;
+            const [baseData, headData, baseModels, headModels, baseKeywords, headKeywords] =
+              await Promise.all([
+                getFileContent(token, repo, "public/data.csv", baseRef),
+                getFileContent(token, headRepo, "public/data.csv", pr.head.sha),
+                getFileContent(token, repo, "public/models.csv", baseRef),
+                getFileContent(token, headRepo, "public/models.csv", pr.head.sha),
+                getFileContent(token, repo, "public/keywords.csv", baseRef),
+                getFileContent(token, headRepo, "public/keywords.csv", pr.head.sha),
+              ]);
+            if (!baseData || !headData) {
+              throw new Error("Could not read public/data.csv to resolve merge conflicts");
+            }
+            const parsed = parseContributionFromCsvDiff({
+              baseDataCsv: baseData.content,
+              headDataCsv: headData.content,
+              baseModelsCsv: baseModels?.content,
+              headModelsCsv: headModels?.content,
+              baseKeywordsCsv: baseKeywords?.content,
+              headKeywordsCsv: headKeywords?.content,
+              prTitle: pr.title || "",
+            });
+            const data: ContributionData = {
+              contribution_type: parsed.contribution_type,
+              ...parsed.form,
+            };
+            if (parsed.ID) data.ID = parsed.ID;
+            if (parsed.new_models.length) data.new_models = parsed.new_models;
+            if (parsed.new_keywords.length) data.new_keywords = parsed.new_keywords;
+
+            const lookupTitle =
+              String(parsed.baseline?.["Paper title"] || parsed.form["Paper title"] || "").trim() ||
+              parsedBaselineTitleFromPr(pr.title) ||
+              undefined;
+            const kind = parsed.contribution_type;
+            const { commitSha, paperTitle } = await rebasePullOntoBase({
+              token,
+              repo,
+              pr,
+              data,
+              lookupTitle,
+              commitMessage: `Resolve conflicts: Table ${kind}: ${parsed.paper_title}`,
+            });
+            rebased = true;
+            rebaseSha = commitSha;
+            // Refresh PR tip after rebase commit.
+            pr = await getPull(token, repo, prNumber);
+            if (paperTitle && !(pr.title || "").includes(paperTitle)) {
+              try {
+                const kind = parsed.contribution_type;
+                await updatePull(token, repo, prNumber, {
+                  title:
+                    kind === "change"
+                      ? `Table change: ${paperTitle}`
+                      : `Table addition: ${paperTitle}`,
+                });
+              } catch {
+                // Non-fatal.
+              }
+            }
+          };
+
+          if (needsRebase) {
+            await rebaseFromHead();
+          }
+
+          let result;
+          try {
+            result = await tryMerge();
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            if (!rebased && /merge conflict|405/i.test(message)) {
+              await rebaseFromHead();
+              result = await tryMerge();
+            } else if (rebased && /merge conflict|405/i.test(message)) {
+              throw new Error(
+                "Still has merge conflicts after updating onto main. Open the PR on GitHub to resolve manually."
+              );
+            } else {
+              throw err;
+            }
+          }
+
           return jsonResponse(
             {
               ok: true,
               merged: result.merged,
               sha: result.sha,
-              message: result.message,
+              message: rebased
+                ? `Updated onto main then merged${rebaseSha ? ` (rebase ${rebaseSha.slice(0, 7)})` : ""}.`
+                : result.message,
               pr_number: prNumber,
               pr_url: pr.html_url,
+              rebased,
             },
             200,
             origin,
