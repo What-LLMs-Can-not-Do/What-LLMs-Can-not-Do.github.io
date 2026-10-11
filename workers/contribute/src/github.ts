@@ -345,6 +345,7 @@ export type PullSummary = {
   body: string | null;
   draft: boolean;
   maintainer_can_modify: boolean;
+  merged_at?: string | null;
   /** Present on single-PR fetches; null while GitHub computes. */
   mergeable?: boolean | null;
   mergeable_state?: string;
@@ -359,6 +360,24 @@ export async function listOpenPulls(
     const batch = await ghJson<PullSummary[]>(
       token,
       `/repos/${repo}/pulls?state=open&per_page=100&page=${page}&sort=updated&direction=desc`
+    );
+    pulls.push(...batch);
+    if (batch.length < 100) break;
+  }
+  return pulls;
+}
+
+/** Closed PRs (merged and unmerged), newest first. Caps pages to bound worker time. */
+export async function listClosedPulls(
+  token: string,
+  repo: string,
+  maxPages = 20
+): Promise<PullSummary[]> {
+  const pulls: PullSummary[] = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const batch = await ghJson<PullSummary[]>(
+      token,
+      `/repos/${repo}/pulls?state=closed&per_page=100&page=${page}&sort=updated&direction=desc`
     );
     pulls.push(...batch);
     if (batch.length < 100) break;
@@ -492,4 +511,88 @@ export function isTableContributionPull(pr: {
   if (/^Add table entry:/i.test(title) || /^Update table entry/i.test(title)) return true;
   if (ref.startsWith("contribution/")) return true;
   return false;
+}
+
+function isBotLogin(login: string): boolean {
+  const lower = login.toLowerCase();
+  return lower.endsWith("[bot]") || lower === "github-actions" || lower === "dependabot";
+}
+
+/** Prefer PR author; fall back to "Submitted by @login" in the body for bot-authored PRs. */
+export function contributorLoginFromPull(pr: {
+  title?: string;
+  body?: string | null;
+  user?: { login?: string; avatar_url?: string } | null;
+}): { login: string; avatar_url: string } | null {
+  const author = (pr.user?.login || "").trim();
+  if (author && !isBotLogin(author)) {
+    return { login: author, avatar_url: pr.user?.avatar_url || "" };
+  }
+  const body = pr.body || "";
+  const match =
+    body.match(/Submitted by\s+\[@([A-Za-z0-9-]+)\]/i) ||
+    body.match(/Submitted by\s+@([A-Za-z0-9-]+)/i);
+  const fromBody = match?.[1]?.trim();
+  if (fromBody && !isBotLogin(fromBody)) {
+    return { login: fromBody, avatar_url: "" };
+  }
+  return null;
+}
+
+export function contributionKindFromTitle(title: string): "addition" | "change" | "other" {
+  if (/change|update table entry/i.test(title)) return "change";
+  if (/addition|add table entry/i.test(title)) return "addition";
+  return "other";
+}
+
+export type LeaderboardEntry = {
+  login: string;
+  avatar_url: string;
+  total: number;
+  additions: number;
+  changes: number;
+};
+
+export function aggregateContributionLeaderboard(
+  pulls: PullSummary[]
+): LeaderboardEntry[] {
+  const byLogin = new Map<
+    string,
+    { login: string; avatar_url: string; additions: number; changes: number; other: number }
+  >();
+
+  for (const pr of pulls) {
+    if (!pr.merged_at) continue;
+    if (!isTableContributionPull(pr)) continue;
+    const contributor = contributorLoginFromPull(pr);
+    if (!contributor) continue;
+    const key = contributor.login.toLowerCase();
+    let entry = byLogin.get(key);
+    if (!entry) {
+      entry = {
+        login: contributor.login,
+        avatar_url: contributor.avatar_url,
+        additions: 0,
+        changes: 0,
+        other: 0,
+      };
+      byLogin.set(key, entry);
+    } else if (!entry.avatar_url && contributor.avatar_url) {
+      entry.avatar_url = contributor.avatar_url;
+    }
+    const kind = contributionKindFromTitle(pr.title || "");
+    if (kind === "addition") entry.additions += 1;
+    else if (kind === "change") entry.changes += 1;
+    else entry.other += 1;
+  }
+
+  return [...byLogin.values()]
+    .map((entry) => ({
+      login: entry.login,
+      avatar_url: entry.avatar_url,
+      total: entry.additions + entry.changes + entry.other,
+      additions: entry.additions,
+      changes: entry.changes,
+    }))
+    .sort((a, b) => b.total - a.total || a.login.localeCompare(b.login));
 }

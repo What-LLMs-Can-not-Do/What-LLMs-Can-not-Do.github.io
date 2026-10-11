@@ -97,6 +97,12 @@ Open `http://localhost:5173/review` for the review UI (same admin password).
 
 Success: `{ "ok": true, "pr_url": "...", "pr_number": N, "submitted_by": "<login>" }`
 
+### Leaderboard (public)
+
+`GET /leaderboard` — ranks GitHub users by **merged** table-contribution PRs (no admin password). Requires `GITHUB_TOKEN`. Response: `{ ok, contributors: [{ login, avatar_url, total, additions, changes }], merged_prs, cached }`. Results are cached in-worker for 5 minutes; pass `?refresh=1` to bypass.
+
+The site UI is at `/leaderboard` (unlisted; not in the nav).
+
 ### Review (admin)
 
 All review routes require header `X-Admin-Password` (same password as subscribe `/admin`) and a configured `GITHUB_TOKEN`.

@@ -7,6 +7,7 @@ import {
   type ContributionData,
 } from "./csv";
 import {
+  aggregateContributionLeaderboard,
   commitFilesToBranch,
   createBranchCommitPr,
   exchangeOAuthCode,
@@ -15,11 +16,13 @@ import {
   getFileContent,
   getPull,
   isTableContributionPull,
+  listClosedPulls,
   listOpenPulls,
   mergePull,
   resolveContributionHead,
   updatePull,
   type Env,
+  type LeaderboardEntry,
   type TreeFile,
 } from "./github";
 import { findTitledRowIdByPaperTitle, parseContributionFromCsvDiff } from "./review";
@@ -37,6 +40,15 @@ import {
 const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
 const AUDIO_EXT_RE = /\.(mp3|wav)$/i;
 const OAUTH_SCOPES = "public_repo read:user";
+const LEADERBOARD_CACHE_TTL_MS = 5 * 60 * 1000;
+
+type LeaderboardCache = {
+  at: number;
+  entries: LeaderboardEntry[];
+  merged_prs: number;
+};
+
+let leaderboardCache: LeaderboardCache | null = null;
 
 function corsHeaders(origin: string | null, allowed: string[]): HeadersInit {
   const headers: Record<string, string> = {
@@ -389,6 +401,65 @@ export default {
 
     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/health")) {
       return jsonResponse({ ok: true, service: "wlcd-contribute" }, 200, origin, allowed);
+    }
+
+    // --- Public contributor leaderboard ---
+    if (request.method === "GET" && url.pathname === "/leaderboard") {
+      if (origin && !allowed.includes(origin)) {
+        return jsonResponse({ error: "Origin not allowed" }, 403, origin, allowed);
+      }
+      const tokenOrErr = requireReviewToken(env, origin, allowed);
+      if (tokenOrErr instanceof Response) return tokenOrErr;
+      const { token } = tokenOrErr;
+      const repo = repoName(env);
+      const bypassCache = url.searchParams.get("refresh") === "1";
+
+      try {
+        const now = Date.now();
+        if (
+          !bypassCache &&
+          leaderboardCache &&
+          now - leaderboardCache.at < LEADERBOARD_CACHE_TTL_MS
+        ) {
+          return jsonResponse(
+            {
+              ok: true,
+              contributors: leaderboardCache.entries,
+              merged_prs: leaderboardCache.merged_prs,
+              cached: true,
+            },
+            200,
+            origin,
+            allowed
+          );
+        }
+
+        const closed = await listClosedPulls(token, repo);
+        const mergedTable = closed.filter(
+          (pr) => Boolean(pr.merged_at) && isTableContributionPull(pr)
+        );
+        const entries = aggregateContributionLeaderboard(mergedTable);
+        leaderboardCache = {
+          at: now,
+          entries,
+          merged_prs: mergedTable.length,
+        };
+        return jsonResponse(
+          {
+            ok: true,
+            contributors: entries,
+            merged_prs: mergedTable.length,
+            cached: false,
+          },
+          200,
+          origin,
+          allowed
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Leaderboard failed";
+        console.error(message);
+        return jsonResponse({ error: message }, 500, origin, allowed);
+      }
     }
 
     // --- Admin review API ---

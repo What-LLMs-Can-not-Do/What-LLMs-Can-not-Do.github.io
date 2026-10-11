@@ -3,6 +3,7 @@ import Admin from "./Admin.jsx";
 import Analytics from "./Analytics.jsx";
 import Contribute from "./Contribute.jsx";
 import Home from "./Home.jsx";
+import Leaderboard from "./Leaderboard.jsx";
 import MailActionRedirect from "./MailActionRedirect.jsx";
 import NavBar from "./NavBar.jsx";
 import Review from "./Review.jsx";
@@ -29,6 +30,7 @@ function AppShell() {
         <Route path="/subscribe" element={<Subscribe />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/review" element={<Review />} />
+        <Route path="/leaderboard" element={<Leaderboard />} />
         <Route path="/confirm" element={<MailActionRedirect action="confirm" />} />
         <Route path="/unsubscribe" element={<MailActionRedirect action="unsubscribe" />} />
         <Route path="*" element={<Navigate to="/" replace />} />
