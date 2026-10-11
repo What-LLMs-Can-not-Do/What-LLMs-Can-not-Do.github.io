@@ -7,15 +7,22 @@ import {
   type ContributionData,
 } from "./csv";
 import {
+  commitFilesToBranch,
   createBranchCommitPr,
   exchangeOAuthCode,
   fileExists,
   getAuthenticatedUser,
   getFileContent,
+  getPull,
+  isTableContributionPull,
+  listOpenPulls,
+  mergePull,
   resolveContributionHead,
+  updatePull,
   type Env,
   type TreeFile,
 } from "./github";
+import { parseContributionFromCsvDiff } from "./review";
 import {
   clearSessionCookie,
   readCookie,
@@ -34,7 +41,7 @@ const OAUTH_SCOPES = "public_repo read:user";
 function corsHeaders(origin: string | null, allowed: string[]): HeadersInit {
   const headers: Record<string, string> = {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Admin-Password",
     "Access-Control-Max-Age": "86400",
   };
   if (origin && allowed.includes(origin)) {
@@ -106,6 +113,99 @@ async function loadSession(request: Request, env: Env) {
   return unsealSession(env.SESSION_SECRET, sealed);
 }
 
+function repoName(env: Env): string {
+  return (env.GITHUB_REPO || "What-LLMs-Can-not-Do/What-LLMs-Can-not-Do.github.io").trim();
+}
+
+function requireAdmin(
+  request: Request,
+  env: Env,
+  origin: string | null,
+  allowed: string[]
+): Response | null {
+  const expected = env.ADMIN_PASSWORD?.trim();
+  if (!expected) {
+    return jsonResponse(
+      { error: "Server misconfigured: missing ADMIN_PASSWORD" },
+      500,
+      origin,
+      allowed
+    );
+  }
+  const provided = (request.headers.get("X-Admin-Password") || "").trim();
+  if (!provided || provided !== expected) {
+    return jsonResponse({ error: "Unauthorized" }, 401, origin, allowed);
+  }
+  return null;
+}
+
+function requireReviewToken(
+  env: Env,
+  origin: string | null,
+  allowed: string[]
+): { token: string } | Response {
+  const token = env.GITHUB_TOKEN?.trim();
+  if (!token) {
+    return jsonResponse(
+      { error: "Server misconfigured: missing GITHUB_TOKEN (required for review)" },
+      500,
+      origin,
+      allowed
+    );
+  }
+  return { token };
+}
+
+function parsePrNumber(pathname: string): number | null {
+  const match = pathname.match(/^\/review\/prs\/(\d+)(?:\/merge)?$/);
+  if (!match) return null;
+  const n = Number.parseInt(match[1], 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+async function collectAudioFromForm(
+  form: FormData,
+  origin: string | null,
+  allowed: string[]
+): Promise<{ audioEntries: { name: string; bytes: Uint8Array }[] } | Response> {
+  const audioEntries: { name: string; bytes: Uint8Array }[] = [];
+  let totalAudio = 0;
+
+  for (const [key, value] of form.entries()) {
+    if (key !== "audio") continue;
+    if (typeof value === "string") {
+      return jsonResponse({ error: "Invalid audio upload" }, 400, origin, allowed);
+    }
+    const file = value as File;
+    const name = file.name || "audio.mp3";
+    if (!AUDIO_EXT_RE.test(name)) {
+      return jsonResponse(
+        { error: `Only .mp3 and .wav audio files are allowed (got ${name})` },
+        400,
+        origin,
+        allowed
+      );
+    }
+    const normalized = normalizeAudioName(name);
+    const buf = new Uint8Array(await file.arrayBuffer());
+    if (!buf.byteLength) {
+      return jsonResponse({ error: `Empty audio file: ${normalized}` }, 400, origin, allowed);
+    }
+    totalAudio += buf.byteLength;
+    if (totalAudio > MAX_AUDIO_BYTES) {
+      return jsonResponse(
+        { error: "Total audio size exceeds 20 MB limit" },
+        400,
+        origin,
+        allowed
+      );
+    }
+    audioEntries.push({ name: normalized, bytes: buf });
+  }
+
+  return { audioEntries };
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const allowed = parseAllowedOrigins(env.ALLOWED_ORIGINS);
@@ -121,6 +221,348 @@ export default {
 
     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/health")) {
       return jsonResponse({ ok: true, service: "wlcd-contribute" }, 200, origin, allowed);
+    }
+
+    // --- Admin review API ---
+    if (url.pathname === "/review/prs" || url.pathname.startsWith("/review/prs/")) {
+      if (origin && !allowed.includes(origin)) {
+        return jsonResponse({ error: "Origin not allowed" }, 403, origin, allowed);
+      }
+      const adminErr = requireAdmin(request, env, origin, allowed);
+      if (adminErr) return adminErr;
+      const tokenOrErr = requireReviewToken(env, origin, allowed);
+      if (tokenOrErr instanceof Response) return tokenOrErr;
+      const { token } = tokenOrErr;
+      const repo = repoName(env);
+
+      try {
+        if (request.method === "GET" && url.pathname === "/review/prs") {
+          const pulls = await listOpenPulls(token, repo);
+          const items = pulls.filter(isTableContributionPull).map((pr) => {
+            const title = pr.title || "";
+            const kind = /change|update table entry/i.test(title)
+              ? "change"
+              : /addition|add table entry/i.test(title)
+                ? "addition"
+                : pr.head.ref.startsWith("contribution/")
+                  ? "contribution"
+                  : "other";
+            return {
+              number: pr.number,
+              title,
+              html_url: pr.html_url,
+              user: pr.user?.login || null,
+              avatar_url: pr.user?.avatar_url || null,
+              created_at: pr.created_at,
+              updated_at: pr.updated_at,
+              head_ref: pr.head.ref,
+              kind,
+              draft: Boolean(pr.draft),
+            };
+          });
+          return jsonResponse({ ok: true, pull_requests: items }, 200, origin, allowed);
+        }
+
+        const prNumber = parsePrNumber(url.pathname);
+        if (!prNumber) {
+          return jsonResponse({ error: "Not found" }, 404, origin, allowed);
+        }
+
+        if (request.method === "GET" && url.pathname === `/review/prs/${prNumber}`) {
+          const pr = await getPull(token, repo, prNumber);
+          if (!isTableContributionPull(pr)) {
+            return jsonResponse(
+              { error: "Pull request is not a table contribution" },
+              400,
+              origin,
+              allowed
+            );
+          }
+          const baseSha = pr.base.sha;
+          const headSha = pr.head.sha;
+          const headRepo = pr.head.repo?.full_name || repo;
+
+          const [baseData, headData, baseModels, headModels, baseKeywords, headKeywords] =
+            await Promise.all([
+              getFileContent(token, repo, "public/data.csv", baseSha),
+              getFileContent(token, headRepo, "public/data.csv", headSha),
+              getFileContent(token, repo, "public/models.csv", baseSha),
+              getFileContent(token, headRepo, "public/models.csv", headSha),
+              getFileContent(token, repo, "public/keywords.csv", baseSha),
+              getFileContent(token, headRepo, "public/keywords.csv", headSha),
+            ]);
+
+          if (!baseData || !headData) {
+            return jsonResponse(
+              { error: "Could not read public/data.csv for this pull request" },
+              500,
+              origin,
+              allowed
+            );
+          }
+
+          const parsed = parseContributionFromCsvDiff({
+            baseDataCsv: baseData.content,
+            headDataCsv: headData.content,
+            baseModelsCsv: baseModels?.content,
+            headModelsCsv: headModels?.content,
+            baseKeywordsCsv: baseKeywords?.content,
+            headKeywordsCsv: headKeywords?.content,
+            prTitle: pr.title || "",
+          });
+
+          const payload: ContributionData = {
+            contribution_type: parsed.contribution_type,
+            ...parsed.form,
+          };
+          if (parsed.ID) payload.ID = parsed.ID;
+          if (parsed.new_models.length) payload.new_models = parsed.new_models;
+          if (parsed.new_keywords.length) payload.new_keywords = parsed.new_keywords;
+
+          return jsonResponse(
+            {
+              ok: true,
+              pull_request: {
+                number: pr.number,
+                title: pr.title,
+                html_url: pr.html_url,
+                user: pr.user?.login || null,
+                avatar_url: pr.user?.avatar_url || null,
+                body: pr.body,
+                head_ref: pr.head.ref,
+                head_sha: pr.head.sha,
+                head_repo: headRepo,
+                base_ref: pr.base.ref,
+                draft: Boolean(pr.draft),
+                maintainer_can_modify: Boolean(pr.maintainer_can_modify),
+              },
+              contribution_type: parsed.contribution_type,
+              paper_title: parsed.paper_title,
+              payload,
+              baseline: parsed.baseline,
+            },
+            200,
+            origin,
+            allowed
+          );
+        }
+
+        if (request.method === "POST" && url.pathname === `/review/prs/${prNumber}`) {
+          const pr = await getPull(token, repo, prNumber);
+          if (!isTableContributionPull(pr)) {
+            return jsonResponse(
+              { error: "Pull request is not a table contribution" },
+              400,
+              origin,
+              allowed
+            );
+          }
+          if (pr.head.repo == null) {
+            return jsonResponse(
+              { error: "PR head repository is unavailable (fork deleted?)" },
+              400,
+              origin,
+              allowed
+            );
+          }
+
+          const form = await request.formData();
+          const payloadRaw = form.get("payload");
+          if (typeof payloadRaw !== "string" || !payloadRaw.trim()) {
+            return jsonResponse({ error: "Missing payload field" }, 400, origin, allowed);
+          }
+          let data: ContributionData;
+          try {
+            data = JSON.parse(payloadRaw) as ContributionData;
+          } catch {
+            return jsonResponse({ error: "Invalid JSON payload" }, 400, origin, allowed);
+          }
+
+          const audioResult = await collectAudioFromForm(form, origin, allowed);
+          if (audioResult instanceof Response) return audioResult;
+          const { audioEntries } = audioResult;
+
+          const contributionType = String(data.contribution_type || "addition").toLowerCase();
+          const isChange = contributionType === "change";
+          const baseRef = pr.base.ref || "main";
+          const headRepo = pr.head.repo.full_name;
+          const headRef = pr.head.ref;
+          const headSha = pr.head.sha;
+
+          // Rebuild contribution from upstream base so edits replace the PR cleanly.
+          const dataFile = await getFileContent(token, repo, "public/data.csv", baseRef);
+          if (!dataFile) {
+            return jsonResponse(
+              { error: "Could not read public/data.csv from base branch" },
+              500,
+              origin,
+              allowed
+            );
+          }
+
+          let paperTitle: string;
+          let dataCsvText: string;
+          let rowChanged = true;
+          if (isChange) {
+            const rowId = String(data.ID ?? "").trim();
+            const updated = updateDataCsv(dataFile.content, rowId, data);
+            dataCsvText = updated.text;
+            paperTitle = updated.paperTitle;
+            rowChanged = updated.changed;
+          } else {
+            const appended = appendDataCsv(dataFile.content, data);
+            dataCsvText = appended.text;
+            paperTitle = appended.paperTitle;
+          }
+
+          const modelsFile = await getFileContent(token, repo, "public/models.csv", baseRef);
+          const modelsResult = appendModelsCsv(
+            modelsFile?.content ?? "",
+            (data.new_models as unknown[]) || []
+          );
+          const keywordsFile = await getFileContent(token, repo, "public/keywords.csv", baseRef);
+          const keywordsResult = appendKeywordsCsv(
+            keywordsFile?.content ?? "",
+            (data.new_keywords as unknown[]) || []
+          );
+
+          if (
+            isChange &&
+            !rowChanged &&
+            !modelsResult.added.length &&
+            !keywordsResult.added.length &&
+            !audioEntries.length
+          ) {
+            return jsonResponse(
+              {
+                error:
+                  "No changes detected. Edit at least one field (or add models, keywords, or audio) before saving.",
+              },
+              400,
+              origin,
+              allowed
+            );
+          }
+
+          const files: TreeFile[] = [];
+          files.push({ path: "public/data.csv", content: dataCsvText, encoding: "utf-8" });
+          if (modelsResult.added.length) {
+            files.push({
+              path: "public/models.csv",
+              content: modelsResult.text,
+              encoding: "utf-8",
+            });
+          } else if (modelsFile) {
+            // Keep head catalogs aligned with base when no new models (drop stale additions).
+            files.push({
+              path: "public/models.csv",
+              content: modelsFile.content,
+              encoding: "utf-8",
+            });
+          }
+          if (keywordsResult.added.length) {
+            files.push({
+              path: "public/keywords.csv",
+              content: keywordsResult.text,
+              encoding: "utf-8",
+            });
+          } else if (keywordsFile) {
+            files.push({
+              path: "public/keywords.csv",
+              content: keywordsFile.content,
+              encoding: "utf-8",
+            });
+          }
+
+          for (const audio of audioEntries) {
+            files.push({
+              path: `public/audio/${audio.name}`,
+              content: audio.bytes,
+              encoding: "binary",
+            });
+          }
+
+          const kind = isChange ? "change" : "addition";
+          const commitMessage = `Review edit: Table ${kind}: ${paperTitle}`;
+          const { commitSha } = await commitFilesToBranch({
+            token,
+            headRepo,
+            branchName: headRef,
+            headSha,
+            commitMessage,
+            files,
+            author: {
+              name: "WLCD Review",
+              email: "noreply@what-llms-can-not-do.org",
+            },
+          });
+
+          const desiredTitle = isChange
+            ? `Table change: ${paperTitle}`
+            : `Table addition: ${paperTitle}`;
+          if ((pr.title || "") !== desiredTitle) {
+            try {
+              await updatePull(token, repo, prNumber, { title: desiredTitle });
+            } catch (err) {
+              console.warn(
+                "Failed to update PR title:",
+                err instanceof Error ? err.message : err
+              );
+            }
+          }
+
+          return jsonResponse(
+            {
+              ok: true,
+              pr_number: prNumber,
+              pr_url: pr.html_url,
+              commit_sha: commitSha,
+              paper_title: paperTitle,
+            },
+            200,
+            origin,
+            allowed
+          );
+        }
+
+        if (request.method === "POST" && url.pathname === `/review/prs/${prNumber}/merge`) {
+          const pr = await getPull(token, repo, prNumber);
+          if (!isTableContributionPull(pr)) {
+            return jsonResponse(
+              { error: "Pull request is not a table contribution" },
+              400,
+              origin,
+              allowed
+            );
+          }
+          const result = await mergePull({
+            token,
+            repo,
+            number: prNumber,
+            commitTitle: pr.title || undefined,
+            mergeMethod: "merge",
+          });
+          return jsonResponse(
+            {
+              ok: true,
+              merged: result.merged,
+              sha: result.sha,
+              message: result.message,
+              pr_number: prNumber,
+              pr_url: pr.html_url,
+            },
+            200,
+            origin,
+            allowed
+          );
+        }
+
+        return jsonResponse({ error: "Not found" }, 404, origin, allowed);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Review request failed";
+        console.error(message);
+        return jsonResponse({ error: message }, 500, origin, allowed);
+      }
     }
 
     if (request.method === "GET" && url.pathname === "/auth/me") {

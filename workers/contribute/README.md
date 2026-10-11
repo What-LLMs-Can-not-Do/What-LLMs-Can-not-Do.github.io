@@ -2,6 +2,8 @@
 
 Accepts Contribute form submissions (JSON payload + optional `.mp3`/`.wav` uploads), updates `public/data.csv` (and models/keywords/audio when needed), and opens a review PR **as the signed-in GitHub user**.
 
+Also powers the site **`/review`** page: list open table-contribution PRs, edit the contribution form, push fixes to the PR branch, and merge — gated by the same admin password as `/admin`.
+
 Submitters must **Sign in with GitHub** on the Contribute page. The worker uses their OAuth token to open the PR (pushing to the main repo when they have write access, otherwise via their fork).
 
 ## Setup
@@ -34,7 +36,15 @@ npx wrangler secret put GITHUB_CLIENT_SECRET
 npx wrangler secret put SESSION_SECRET   # long random string
 ```
 
-Optional: keep `GITHUB_TOKEN` only if you still need a bot token for other tooling; PR creation no longer uses it.
+For the `/review` page (list / edit / merge table PRs), also set:
+
+```bash
+npx wrangler secret put ADMIN_PASSWORD   # same value as the subscribe worker
+npx wrangler secret put GITHUB_TOKEN     # maintainer PAT (contents + pull requests write)
+```
+
+`ADMIN_PASSWORD` must match the subscribe worker secret used by `/admin`.  
+`GITHUB_TOKEN` should be a fine-grained or classic PAT for a maintainer account with permission to push to PR heads (including forks with maintainer edits) and merge pull requests on `GITHUB_REPO`.
 
 Set the public Client ID in `wrangler.toml` (`GITHUB_CLIENT_ID`) or:
 
@@ -67,6 +77,8 @@ Point the site at the local worker, and add `http://127.0.0.1:8787/auth/callback
 VITE_CONTRIBUTE_API_URL=http://127.0.0.1:8787 npm run dev
 ```
 
+Open `http://localhost:5173/review` for the review UI (same admin password).
+
 ## API
 
 ### Auth
@@ -84,3 +96,16 @@ VITE_CONTRIBUTE_API_URL=http://127.0.0.1:8787 npm run dev
 - `audio` — zero or more `.mp3`/`.wav` files (20 MB total cap)
 
 Success: `{ "ok": true, "pr_url": "...", "pr_number": N, "submitted_by": "<login>" }`
+
+### Review (admin)
+
+All review routes require header `X-Admin-Password` (same password as subscribe `/admin`) and a configured `GITHUB_TOKEN`.
+
+| Method | Path | Behavior |
+|--------|------|----------|
+| `GET` | `/review/prs` | List open table-contribution PRs |
+| `GET` | `/review/prs/:number` | PR metadata + parsed contribution form payload |
+| `POST` | `/review/prs/:number` | Multipart `payload` (+ optional `audio`); rebuild CSV from base + form and commit to the PR head |
+| `POST` | `/review/prs/:number/merge` | Merge the PR into the base branch |
+
+The site UI is at `/review` (unlisted; not in the nav). It reuses the `wlcd_admin_password` session key from `/admin`.

@@ -10,5 +10,5 @@ ALLOWED_ORIGINS = "https://what-llms-can-not-do.org,https://www.what-llms-can-no
 # Secrets (wrangler secret put):
 #   GITHUB_CLIENT_SECRET
 #   SESSION_SECRET
-# Optional legacy bot token (no longer used for PR authorship):
-#   GITHUB_TOKEN
+#   ADMIN_PASSWORD          # same value as subscribe worker (for /review)
+#   GITHUB_TOKEN            # maintainer PAT with contents + pull_requests (for /review)

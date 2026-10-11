@@ -330,7 +330,7 @@ export function updateDataCsv(
   csvText: string,
   rowIdRaw: string,
   data: ContributionData
-): { text: string; paperTitle: string } {
+): { text: string; paperTitle: string; changed: boolean } {
   const rowId = String(rowIdRaw).trim();
   if (!rowId) throw new Error("Missing row ID for table change");
 

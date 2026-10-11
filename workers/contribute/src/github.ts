@@ -1,9 +1,11 @@
 export type Env = {
-  /** Optional bot token (unused for PR authorship; kept for compatibility). */
+  /** Maintainer token for /review/* (list, edit, merge PRs). */
   GITHUB_TOKEN?: string;
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   SESSION_SECRET?: string;
+  /** Same value as the subscribe worker admin password. */
+  ADMIN_PASSWORD?: string;
   GITHUB_REPO?: string;
   ALLOWED_ORIGINS?: string;
 };
@@ -90,7 +92,7 @@ export async function getFileContent(
   if (!res.ok) {
     throw new Error(`GitHub API ${res.status}: ${data?.message || res.statusText}`);
   }
-  if (data.encoding !== "base64" || typeof data.content !== "string") {
+  if (!data || data.encoding !== "base64" || typeof data.content !== "string") {
     throw new Error(`Unexpected content encoding for ${path}`);
   }
   // Contents API returns UTF-8 text files as base64 of UTF-8 bytes.
@@ -322,4 +324,169 @@ export async function createBranchCommitPr(options: {
   });
 
   return { prUrl: pr.html_url, prNumber: pr.number };
+}
+
+export type PullSummary = {
+  number: number;
+  title: string;
+  html_url: string;
+  user: { login: string; avatar_url?: string } | null;
+  created_at: string;
+  updated_at: string;
+  head: {
+    ref: string;
+    sha: string;
+    repo: { full_name: string } | null;
+  };
+  base: {
+    ref: string;
+    sha: string;
+  };
+  body: string | null;
+  draft: boolean;
+  maintainer_can_modify: boolean;
+};
+
+export async function listOpenPulls(
+  token: string,
+  repo: string
+): Promise<PullSummary[]> {
+  const pulls: PullSummary[] = [];
+  for (let page = 1; page <= 10; page++) {
+    const batch = await ghJson<PullSummary[]>(
+      token,
+      `/repos/${repo}/pulls?state=open&per_page=100&page=${page}&sort=updated&direction=desc`
+    );
+    pulls.push(...batch);
+    if (batch.length < 100) break;
+  }
+  return pulls;
+}
+
+export async function getPull(
+  token: string,
+  repo: string,
+  number: number
+): Promise<PullSummary> {
+  return ghJson<PullSummary>(token, `/repos/${repo}/pulls/${number}`);
+}
+
+export async function updatePull(
+  token: string,
+  repo: string,
+  number: number,
+  patch: { title?: string; body?: string }
+): Promise<PullSummary> {
+  return ghJson<PullSummary>(token, `/repos/${repo}/pulls/${number}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+}
+
+/** Commit file updates on top of an existing branch (e.g. a PR head). */
+export async function commitFilesToBranch(options: {
+  token: string;
+  headRepo: string;
+  branchName: string;
+  /** Current tip SHA of the branch (parent commit). */
+  headSha: string;
+  commitMessage: string;
+  files: TreeFile[];
+  author?: { name: string; email: string };
+}): Promise<{ commitSha: string }> {
+  const { token, headRepo, branchName, headSha, commitMessage, files, author } = options;
+
+  const headCommit = await ghJson<{ tree: { sha: string } }>(
+    token,
+    `/repos/${headRepo}/git/commits/${headSha}`
+  );
+  const baseTreeSha = headCommit.tree.sha;
+
+  const treeItems: { path: string; mode: string; type: string; sha: string }[] = [];
+  for (const file of files) {
+    const contentB64 =
+      file.encoding === "utf-8" ? textToBase64(file.content) : toBase64(file.content);
+    const blob = await ghJson<{ sha: string }>(token, `/repos/${headRepo}/git/blobs`, {
+      method: "POST",
+      body: JSON.stringify({ content: contentB64, encoding: "base64" }),
+    });
+    treeItems.push({
+      path: file.path,
+      mode: "100644",
+      type: "blob",
+      sha: blob.sha,
+    });
+  }
+
+  const tree = await ghJson<{ sha: string }>(token, `/repos/${headRepo}/git/trees`, {
+    method: "POST",
+    body: JSON.stringify({ base_tree: baseTreeSha, tree: treeItems }),
+  });
+
+  const commitBody: Record<string, unknown> = {
+    message: commitMessage,
+    tree: tree.sha,
+    parents: [headSha],
+  };
+  if (author) {
+    commitBody.author = author;
+    commitBody.committer = author;
+  }
+
+  const newCommit = await ghJson<{ sha: string }>(token, `/repos/${headRepo}/git/commits`, {
+    method: "POST",
+    body: JSON.stringify(commitBody),
+  });
+
+  await ghJson(token, `/repos/${headRepo}/git/refs/heads/${encodeURIComponent(branchName)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ sha: newCommit.sha, force: false }),
+  });
+
+  return { commitSha: newCommit.sha };
+}
+
+export async function mergePull(options: {
+  token: string;
+  repo: string;
+  number: number;
+  commitTitle?: string;
+  mergeMethod?: "merge" | "squash" | "rebase";
+}): Promise<{ merged: boolean; sha?: string; message: string; html_url?: string }> {
+  const { token, repo, number, commitTitle, mergeMethod = "merge" } = options;
+  const body: Record<string, unknown> = { merge_method: mergeMethod };
+  if (commitTitle) body.commit_title = commitTitle;
+
+  const res = await gh(token, `/repos/${repo}/pulls/${number}/merge`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  let data: { merged?: boolean; sha?: string; message?: string; html_url?: string } = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { message: text };
+  }
+  if (!res.ok) {
+    throw new Error(`GitHub API ${res.status}: ${data.message || res.statusText}`);
+  }
+  return {
+    merged: Boolean(data.merged),
+    sha: data.sha,
+    message: data.message || "Merged",
+    html_url: data.html_url,
+  };
+}
+
+export function isTableContributionPull(pr: {
+  title?: string;
+  head?: { ref?: string };
+}): boolean {
+  const title = (pr.title || "").trim();
+  const ref = (pr.head?.ref || "").trim();
+  if (/^Table (addition|change):/i.test(title)) return true;
+  if (/^Add table entry:/i.test(title) || /^Update table entry/i.test(title)) return true;
+  if (ref.startsWith("contribution/")) return true;
+  return false;
 }

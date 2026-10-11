@@ -5,6 +5,7 @@ import Contribute from "./Contribute.jsx";
 import Home from "./Home.jsx";
 import MailActionRedirect from "./MailActionRedirect.jsx";
 import NavBar from "./NavBar.jsx";
+import Review from "./Review.jsx";
 import Subscribe from "./Subscribe.jsx";
 import Table from "./table-scaffold.jsx";
 
@@ -27,6 +28,7 @@ function AppShell() {
         <Route path="/contribute" element={<Contribute />} />
         <Route path="/subscribe" element={<Subscribe />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/review" element={<Review />} />
         <Route path="/confirm" element={<MailActionRedirect action="confirm" />} />
         <Route path="/unsubscribe" element={<MailActionRedirect action="unsubscribe" />} />
         <Route path="*" element={<Navigate to="/" replace />} />
