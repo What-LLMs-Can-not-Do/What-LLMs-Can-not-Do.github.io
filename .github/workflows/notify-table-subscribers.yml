@@ -1,4 +1,7 @@
-name: Notify subscribers
+# Renamed from notify-subscribers.yml: the old workflow ID was stuck failing with
+# "No jobs were run" on every push (0 jobs scheduled) even after path filters were
+# removed. A new filename forces GitHub to register a fresh workflow.
+name: Notify table subscribers
 
 on:
   push:
@@ -18,14 +21,18 @@ permissions:
   contents: read
 
 concurrency:
-  group: notify-subscribers
+  group: notify-table-subscribers
   cancel-in-progress: false
 
 jobs:
   notify:
     runs-on: ubuntu-latest
-    # Job always runs — path filters / job-level if cause GitHub "No jobs were run" emails.
+    # Keep gates at step level only. Job-level if / on.push.paths make GitHub
+    # report failure emails: "No jobs were run".
     steps:
+      - name: Start
+        run: echo "Notify table subscribers workflow started."
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -37,14 +44,14 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Manual run — will classify."
+            echo "Manual run - will classify."
             exit 0
           fi
           BEFORE="${{ github.event.before }}"
           AFTER="${{ github.sha }}"
           if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "No usable before SHA — will classify."
+            echo "No usable before SHA - will classify."
             exit 0
           fi
           if git diff --name-only "$BEFORE" "$AFTER" | grep -qx 'public/data.csv'; then
@@ -52,7 +59,7 @@ jobs:
             echo "public/data.csv changed."
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "public/data.csv unchanged — nothing to notify."
+            echo "public/data.csv unchanged - nothing to notify."
           fi
 
       - name: Check subscribe notify config
@@ -66,7 +73,7 @@ jobs:
           set -euo pipefail
           if [ -z "${SUBSCRIBE_API_URL:-}" ] || [ -z "${SUBSCRIBE_NOTIFY_SECRET:-}" ]; then
             echo "Subscribe notify is not fully configured (SUBSCRIBE_API_URL / SUBSCRIBE_NOTIFY_SECRET)."
-            echo "Skipping send — set both in repo Settings → Secrets and variables."
+            echo "Skipping send - set both in repo Settings -> Secrets and variables."
             echo "configured=false" >> "$GITHUB_OUTPUT"
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
@@ -90,7 +97,7 @@ jobs:
               BEFORE="$(git rev-parse "${AFTER}^")"
             fi
           fi
-          echo "Comparing data.csv $BEFORE → $AFTER"
+          echo "Comparing data.csv $BEFORE -> $AFTER"
           python3 .github/scripts/classify_table_diff.py \
             --before "$BEFORE" \
             --after "$AFTER" \
@@ -114,8 +121,8 @@ jobs:
             echo "No titled-row additions/changes to notify about."
             exit 0
           fi
-          echo "Sending $count event(s)…"
-          # Use curl — Cloudflare blocks Python-urllib from Actions (error 1010).
+          echo "Sending $count event(s)..."
+          # Use curl - Cloudflare blocks Python-urllib from Actions (error 1010).
           python3 -c 'import json; events=json.load(open("/tmp/notify-events.json"))["events"];
 [open(f"/tmp/notify-event-{i}.json","w").write(json.dumps(e)) for i,e in enumerate(events)];
 print(len(events))'
@@ -135,9 +142,9 @@ print(len(events))'
             echo
             if [ "$http_code" != "200" ]; then
               if [ "$http_code" = "401" ]; then
-                echo "::error::401 Unauthorized — SUBSCRIBE_NOTIFY_SECRET does not match worker NOTIFY_SECRET."
+                echo "::error::401 Unauthorized - SUBSCRIBE_NOTIFY_SECRET does not match worker NOTIFY_SECRET."
               elif [ "$http_code" = "403" ]; then
-                echo "::error::403 from Cloudflare/worker — check bot protection / URL."
+                echo "::error::403 from Cloudflare/worker - check bot protection / URL."
               fi
               exit 1
             fi
