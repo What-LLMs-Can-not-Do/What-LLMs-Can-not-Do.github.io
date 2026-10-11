@@ -1,6 +1,3 @@
-# Renamed from notify-subscribers.yml: the old workflow ID was stuck failing with
-# "No jobs were run" on every push (0 jobs scheduled) even after path filters were
-# removed. A new filename forces GitHub to register a fresh workflow.
 name: Notify table subscribers
 
 on:
@@ -39,22 +36,24 @@ jobs:
 
       - name: Check whether public/data.csv changed
         id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Manual run - will classify."
             exit 0
           fi
-          BEFORE="${{ github.event.before }}"
-          AFTER="${{ github.sha }}"
-          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+          if [ -z "${BEFORE_SHA:-}" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "No usable before SHA - will classify."
             exit 0
           fi
-          if git diff --name-only "$BEFORE" "$AFTER" | grep -qx 'public/data.csv'; then
+          if git diff --name-only "$BEFORE_SHA" "$AFTER_SHA" | grep -qx 'public/data.csv'; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "public/data.csv changed."
           else
@@ -83,16 +82,21 @@ jobs:
       - name: Classify data.csv changes
         if: steps.gate.outputs.changed == 'true' && steps.config.outputs.configured == 'true'
         id: classify
+        env:
+          AFTER_INPUT: ${{ inputs.after }}
+          BEFORE_INPUT: ${{ inputs.before }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          AFTER="${{ inputs.after }}"
-          BEFORE="${{ inputs.before }}"
+          AFTER="${AFTER_INPUT:-}"
+          BEFORE="${BEFORE_INPUT:-}"
           if [ -z "$AFTER" ]; then
-            AFTER="${{ github.sha }}"
+            AFTER="$AFTER_SHA"
           fi
           if [ -z "$BEFORE" ]; then
-            BEFORE="${{ github.event.before }}"
+            BEFORE="${EVENT_BEFORE:-}"
             if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
               BEFORE="$(git rev-parse "${AFTER}^")"
             fi
@@ -122,10 +126,14 @@ jobs:
             exit 0
           fi
           echo "Sending $count event(s)..."
-          # Use curl - Cloudflare blocks Python-urllib from Actions (error 1010).
-          python3 -c 'import json; events=json.load(open("/tmp/notify-events.json"))["events"];
-[open(f"/tmp/notify-event-{i}.json","w").write(json.dumps(e)) for i,e in enumerate(events)];
-print(len(events))'
+          # Split events to temp files. Keep every line indented so the YAML stays valid.
+          python3 -c "
+          import json
+          events = json.load(open('/tmp/notify-events.json'))['events']
+          for i, event in enumerate(events):
+              open(f'/tmp/notify-event-{i}.json', 'w').write(json.dumps(event))
+          print(len(events))
+          "
           for f in /tmp/notify-event-*.json; do
             echo "POST $f"
             cat "$f"
