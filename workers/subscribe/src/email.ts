@@ -9,9 +9,22 @@ export type Env = {
   SITE_ORIGIN?: string;
   /** Public origin used in email links (confirm / unsubscribe). Prefer a custom domain. */
   API_ORIGIN?: string;
-  /** Optional Reply-To for deliverability / human contact. */
+  /**
+   * Public contact inbox (Email Routing → this worker). Used as Reply-To so replies
+   * fan out to admin-managed contact_recipients.
+   */
+  CONTACT_EMAIL?: string;
+  /** Optional Reply-To fallback when CONTACT_EMAIL is unset. */
   REPLY_TO?: string;
 };
+
+/** Prefer CONTACT_EMAIL (public inbox) over static REPLY_TO. */
+export function replyToAddress(env: Env): string | undefined {
+  const contact = env.CONTACT_EMAIL?.trim();
+  if (contact) return contact;
+  const replyTo = env.REPLY_TO?.trim();
+  return replyTo || undefined;
+}
 
 export async function sendEmail(options: {
   apiKey: string;

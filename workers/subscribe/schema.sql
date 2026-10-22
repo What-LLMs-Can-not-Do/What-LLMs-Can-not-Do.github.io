@@ -28,3 +28,8 @@ CREATE TABLE IF NOT EXISTS pending_events (
 
 CREATE INDEX IF NOT EXISTS idx_pending_events_topic_created
   ON pending_events(topic, created_at);
+
+CREATE TABLE IF NOT EXISTS contact_recipients (
+  email TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL
+);

@@ -36,9 +36,11 @@ npx wrangler secret put NOTIFY_SECRET       # long random string for GitHub Acti
 npx wrangler secret put ADMIN_PASSWORD      # password for /admin subscriber list
 ```
 
-Optional: set `SITE_ORIGIN` / `ALLOWED_ORIGINS` / `API_ORIGIN` in `wrangler.toml` `[vars]`.
+Optional: set `SITE_ORIGIN` / `ALLOWED_ORIGINS` / `API_ORIGIN` / `CONTACT_EMAIL` in `wrangler.toml` `[vars]`.
 
 `API_ORIGIN` should be a custom hostname on this worker (default `https://subscribe.what-llms-can-not-do.org`) so confirmation links match your From domain. Deploy with `custom_domain` in `wrangler.toml` creates the DNS record when the zone is in the same Cloudflare account.
+
+`CONTACT_EMAIL` (default `contact@what-llms-can-not-do.org`) is the public inbox and the Reply-To on outbound mail. Inbound messages are fanned out to addresses managed on `/admin`.
 
 ### 4. Deploy
 
@@ -48,7 +50,17 @@ npm run deploy
 
 Note the worker URL (e.g. `https://wlcd-subscribe.<account>.workers.dev`).
 
-### 5. Site + GitHub Actions
+### 5. Contact inbox (Email Routing)
+
+1. Cloudflare dashboard → Email → Email Routing for the zone; enable routing.
+2. Add each admin mailbox (e.g. Gmail) as a **Destination address** and complete verification.
+3. Add a custom address matching `CONTACT_EMAIL` → **Send to a Worker** → `wlcd-subscribe`.
+4. On the site `/admin` page, add those same addresses under **Contact recipients**.
+5. Send a test message to `CONTACT_EMAIL` and confirm every listed inbox receives it.
+
+`message.forward()` only succeeds for destinations verified in Email Routing. If the recipient list is empty, inbound mail is rejected.
+
+### 6. Site + GitHub Actions
 
 - Repository variable `VITE_SUBSCRIBE_API_URL` = worker origin (no trailing path)
 - Repository secret `SUBSCRIBE_NOTIFY_SECRET` = same value as `NOTIFY_SECRET`
@@ -62,6 +74,11 @@ Note the worker URL (e.g. `https://wlcd-subscribe.<account>.workers.dev`).
 | `GET` | `/confirm?token=` | — | Confirm subscription; redirects to site |
 | `GET` | `/unsubscribe?token=` | — | Unsubscribe; redirects to site |
 | `GET` | `/admin/subscribers` | `X-Admin-Password` | List subscribers for the site `/admin` page |
+| `POST` | `/admin/subscribers/update` | `X-Admin-Password` | `{ email, topics, frequency }` |
+| `POST` | `/admin/subscribers/delete` | `X-Admin-Password` | `{ email }` |
+| `GET` | `/admin/contact-recipients` | `X-Admin-Password` | List contact fan-out recipients |
+| `POST` | `/admin/contact-recipients` | `X-Admin-Password` | `{ email }` — add recipient |
+| `POST` | `/admin/contact-recipients/delete` | `X-Admin-Password` | `{ email }` — remove recipient |
 | `POST` | `/admin/news` | `X-Admin-Password` | `{ subject, body }` — send news from `/admin` |
 | `POST` | `/notify` | `X-Notify-Secret` | Queue event; email immediate subscribers. Pass `"test": true` to send only to the hidden `debug` topic (no digest queue). |
 | `POST` | `/digest` | `X-Notify-Secret` | Run digests now (optional `{ frequencies: ["weekly"] }`) |
@@ -73,6 +90,7 @@ For an existing D1 database, also run:
 
 ```bash
 npm run db:migrate:frequency:remote
+npm run db:migrate:contact:remote
 ```
 
 ## Local development

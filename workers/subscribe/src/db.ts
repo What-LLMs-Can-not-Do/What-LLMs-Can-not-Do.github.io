@@ -299,3 +299,52 @@ export function parseJsonArray<T>(raw: string | null | undefined): T[] {
 export function subscriberFrequency(row: { frequency?: string | null }): Frequency {
   return normalizeFrequency(row.frequency || DEFAULT_FREQUENCY);
 }
+
+export type ContactRecipientRow = {
+  email: string;
+  created_at: string;
+};
+
+export async function listContactRecipients(
+  db: D1Database
+): Promise<ContactRecipientRow[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT email, created_at FROM contact_recipients ORDER BY created_at ASC`
+    )
+    .all<ContactRecipientRow>();
+  return results || [];
+}
+
+export async function addContactRecipient(
+  db: D1Database,
+  email: string
+): Promise<ContactRecipientRow> {
+  const now = new Date().toISOString();
+  await db
+    .prepare(
+      `INSERT INTO contact_recipients (email, created_at) VALUES (?, ?)
+       ON CONFLICT(email) DO NOTHING`
+    )
+    .bind(email, now)
+    .run();
+  const row = await db
+    .prepare(`SELECT email, created_at FROM contact_recipients WHERE email = ?`)
+    .bind(email)
+    .first<ContactRecipientRow>();
+  if (!row) {
+    throw new Error("Failed to add contact recipient");
+  }
+  return row;
+}
+
+export async function deleteContactRecipient(
+  db: D1Database,
+  email: string
+): Promise<boolean> {
+  const result = await db
+    .prepare(`DELETE FROM contact_recipients WHERE email = ?`)
+    .bind(email)
+    .run();
+  return Number(result.meta.changes || 0) > 0;
+}

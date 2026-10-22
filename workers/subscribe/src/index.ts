@@ -1,11 +1,14 @@
 import {
+  addContactRecipient,
   confirmSubscription,
+  deleteContactRecipient,
   deleteSubscriberByEmail,
   getByEmail,
   insertPendingEvent,
   listAllSubscribers,
   listConfirmedByFrequency,
   listConfirmedForTopic,
+  listContactRecipients,
   listPendingEventsSince,
   markDigestSent,
   prunePendingEventsOlderThan,
@@ -17,6 +20,7 @@ import {
 } from "./db";
 import {
   escapeHtml,
+  replyToAddress,
   sendEmail,
   textToHtmlParagraphs,
   wrapHtml,
@@ -166,7 +170,7 @@ async function sendConfirmEmail(
     subject,
     text,
     html,
-    replyTo: env.REPLY_TO?.trim() || undefined,
+    replyTo: replyToAddress(env),
   });
 }
 
@@ -246,7 +250,7 @@ async function sendPreferencesChangedEmail(
     subject,
     text,
     html,
-    replyTo: env.REPLY_TO?.trim() || undefined,
+    replyTo: replyToAddress(env),
     unsubscribeUrl: unsub,
   });
 }
@@ -283,7 +287,7 @@ async function sendToRecipients(
         subject,
         text,
         html,
-        replyTo: env.REPLY_TO?.trim() || undefined,
+        replyTo: replyToAddress(env),
         unsubscribeUrl: unsub,
       });
       sent++;
@@ -952,7 +956,130 @@ const worker = {
       return handleSendNews(request, env, url, origin, allowed);
     }
 
+    if (request.method === "GET" && url.pathname === "/admin/contact-recipients") {
+      if (origin && !isAllowedOrigin(origin, allowed)) {
+        return jsonResponse({ error: "Origin not allowed" }, 403, origin, allowed);
+      }
+      if (!env.ADMIN_PASSWORD?.trim()) {
+        return jsonResponse(
+          { error: "Server misconfigured: missing ADMIN_PASSWORD" },
+          500,
+          origin,
+          allowed
+        );
+      }
+      if (!requireAdminPassword(request, env)) {
+        return jsonResponse({ error: "Unauthorized" }, 401, origin, allowed);
+      }
+
+      const recipients = await listContactRecipients(env.DB);
+      return jsonResponse(
+        {
+          ok: true,
+          count: recipients.length,
+          contact_email: env.CONTACT_EMAIL?.trim() || null,
+          recipients,
+        },
+        200,
+        origin,
+        allowed
+      );
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/contact-recipients") {
+      if (origin && !isAllowedOrigin(origin, allowed)) {
+        return jsonResponse({ error: "Origin not allowed" }, 403, origin, allowed);
+      }
+      if (!env.ADMIN_PASSWORD?.trim()) {
+        return jsonResponse(
+          { error: "Server misconfigured: missing ADMIN_PASSWORD" },
+          500,
+          origin,
+          allowed
+        );
+      }
+      if (!requireAdminPassword(request, env)) {
+        return jsonResponse({ error: "Unauthorized" }, 401, origin, allowed);
+      }
+
+      let body: { email?: string };
+      try {
+        body = (await request.json()) as typeof body;
+      } catch {
+        return jsonResponse({ error: "Invalid JSON body" }, 400, origin, allowed);
+      }
+
+      const email = normalizeEmail(body.email || "");
+      if (!email) {
+        return jsonResponse({ error: "Enter a valid email address." }, 400, origin, allowed);
+      }
+
+      const recipient = await addContactRecipient(env.DB, email);
+      return jsonResponse({ ok: true, recipient }, 200, origin, allowed);
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/contact-recipients/delete") {
+      if (origin && !isAllowedOrigin(origin, allowed)) {
+        return jsonResponse({ error: "Origin not allowed" }, 403, origin, allowed);
+      }
+      if (!env.ADMIN_PASSWORD?.trim()) {
+        return jsonResponse(
+          { error: "Server misconfigured: missing ADMIN_PASSWORD" },
+          500,
+          origin,
+          allowed
+        );
+      }
+      if (!requireAdminPassword(request, env)) {
+        return jsonResponse({ error: "Unauthorized" }, 401, origin, allowed);
+      }
+
+      let body: { email?: string };
+      try {
+        body = (await request.json()) as typeof body;
+      } catch {
+        return jsonResponse({ error: "Invalid JSON body" }, 400, origin, allowed);
+      }
+
+      const email = normalizeEmail(body.email || "");
+      if (!email) {
+        return jsonResponse({ error: "email is required" }, 400, origin, allowed);
+      }
+
+      const deleted = await deleteContactRecipient(env.DB, email);
+      if (!deleted) {
+        return jsonResponse({ error: "Recipient not found" }, 404, origin, allowed);
+      }
+
+      return jsonResponse({ ok: true, deleted: email }, 200, origin, allowed);
+    }
+
     return jsonResponse({ error: "Not found" }, 404, origin, allowed);
+  },
+
+  async email(message: ForwardableEmailMessage, env: Env): Promise<void> {
+    const recipients = await listContactRecipients(env.DB);
+    if (recipients.length === 0) {
+      console.error("Contact fan-out rejected: no contact_recipients configured");
+      message.setReject("Contact inbox has no recipients configured");
+      return;
+    }
+
+    let forwarded = 0;
+    for (const row of recipients) {
+      try {
+        await message.forward(row.email);
+        forwarded++;
+        console.log(`Contact mail forwarded to ${row.email}`);
+      } catch (err) {
+        console.error(`Contact forward failed for ${row.email}:`, err);
+      }
+    }
+
+    // Do not setReject after any successful forward (Cloudflare forbids mixing them).
+    if (forwarded === 0) {
+      message.setReject("Failed to forward contact message to any recipient");
+    }
   },
 
   async scheduled(

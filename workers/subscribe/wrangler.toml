@@ -15,6 +15,8 @@ ALLOWED_ORIGINS = "https://what-llms-can-not-do.org,https://www.what-llms-can-no
 SITE_ORIGIN = "https://what-llms-can-not-do.org"
 # Confirm/unsubscribe links in emails (apex = same registrable domain as From).
 API_ORIGIN = "https://what-llms-can-not-do.org"
+# Public contact inbox (Email Routing → this worker's email handler). Also used as Reply-To.
+CONTACT_EMAIL = "contact@what-llms-can-not-do.org"
 
 # Custom hostname for email links (same Cloudflare account as the zone).
 [[routes]]
@@ -33,4 +35,10 @@ crons = ["0 15 * * *"]
 #   ADMIN_PASSWORD
 #   TOKEN_SECRET
 # Optional:
-#   REPLY_TO        # contact@mail.… — human replies land via Email Routing
+#   REPLY_TO        # fallback Reply-To when CONTACT_EMAIL is unset
+#
+# Contact fan-out (Email Routing):
+#   1. Enable Email Routing on the zone
+#   2. Verify each admin Gmail as a Destination address
+#   3. Route CONTACT_EMAIL → Send to a Worker → wlcd-subscribe
+#   4. Manage recipients on /admin (D1 contact_recipients)

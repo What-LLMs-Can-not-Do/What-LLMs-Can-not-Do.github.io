@@ -46,6 +46,13 @@ export default function Admin() {
   const [newsError, setNewsError] = useState("");
   const [newsResult, setNewsResult] = useState(null);
 
+  const [contactRecipients, setContactRecipients] = useState([]);
+  const [contactEmail, setContactEmail] = useState(null);
+  const [contactInput, setContactInput] = useState("");
+  const [contactAdding, setContactAdding] = useState(false);
+  const [contactDeleting, setContactDeleting] = useState("");
+  const [contactError, setContactError] = useState("");
+
   const applySubscribers = (rows) => {
     setSubscribers(rows);
     const nextDrafts = {};
@@ -68,23 +75,38 @@ export default function Admin() {
 
     setLoading(true);
     setError("");
+    setContactError("");
     try {
-      const endpoint = SUBSCRIBE_API_URL.replace(/\/$/, "") + "/admin/subscribers";
-      const response = await fetch(endpoint, {
-        headers: { "X-Admin-Password": pwd.trim() },
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(result.error || `Request failed (${response.status})`);
+      const base = SUBSCRIBE_API_URL.replace(/\/$/, "");
+      const headers = { "X-Admin-Password": pwd.trim() };
+      const [subsResponse, contactResponse] = await Promise.all([
+        fetch(base + "/admin/subscribers", { headers }),
+        fetch(base + "/admin/contact-recipients", { headers }),
+      ]);
+      const subsResult = await subsResponse.json().catch(() => ({}));
+      if (!subsResponse.ok) {
+        throw new Error(subsResult.error || `Request failed (${subsResponse.status})`);
       }
+
+      const contactResult = await contactResponse.json().catch(() => ({}));
+      if (!contactResponse.ok) {
+        throw new Error(
+          contactResult.error || `Contact recipients failed (${contactResponse.status})`
+        );
+      }
+
       sessionStorage.setItem(SESSION_KEY, pwd.trim());
       setPassword(pwd.trim());
-      applySubscribers(result.subscribers || []);
+      applySubscribers(subsResult.subscribers || []);
+      setContactRecipients(contactResult.recipients || []);
+      setContactEmail(contactResult.contact_email || null);
     } catch (err) {
       sessionStorage.removeItem(SESSION_KEY);
       setPassword("");
       setSubscribers([]);
       setDrafts({});
+      setContactRecipients([]);
+      setContactEmail(null);
       setError(err instanceof Error ? err.message : "Failed to load subscribers");
     } finally {
       setLoading(false);
@@ -115,6 +137,81 @@ export default function Admin() {
     setNewsBody("");
     setNewsError("");
     setNewsResult(null);
+    setContactRecipients([]);
+    setContactEmail(null);
+    setContactInput("");
+    setContactError("");
+  };
+
+  const addContactRecipient = async (event) => {
+    event.preventDefault();
+    if (!SUBSCRIBE_API_URL || !password) return;
+    const email = contactInput.trim();
+    if (!email) {
+      setContactError("Enter an email address.");
+      return;
+    }
+
+    setContactAdding(true);
+    setContactError("");
+    try {
+      const endpoint =
+        SUBSCRIBE_API_URL.replace(/\/$/, "") + "/admin/contact-recipients";
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Password": password,
+        },
+        body: JSON.stringify({ email }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.error || `Add failed (${response.status})`);
+      }
+      const recipient = result.recipient;
+      setContactRecipients((prev) => {
+        if (prev.some((row) => row.email === recipient.email)) return prev;
+        return [...prev, recipient];
+      });
+      setContactInput("");
+    } catch (err) {
+      setContactError(err instanceof Error ? err.message : "Failed to add recipient");
+    } finally {
+      setContactAdding(false);
+    }
+  };
+
+  const deleteContactRecipient = async (row) => {
+    if (!SUBSCRIBE_API_URL || !password) return;
+    const confirmed = window.confirm(
+      `Remove ${row.email} from contact recipients? They will no longer receive mail to the contact inbox.`
+    );
+    if (!confirmed) return;
+
+    setContactDeleting(row.email);
+    setContactError("");
+    try {
+      const endpoint =
+        SUBSCRIBE_API_URL.replace(/\/$/, "") + "/admin/contact-recipients/delete";
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Admin-Password": password,
+        },
+        body: JSON.stringify({ email: row.email }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.error || `Delete failed (${response.status})`);
+      }
+      setContactRecipients((prev) => prev.filter((item) => item.email !== row.email));
+    } catch (err) {
+      setContactError(err instanceof Error ? err.message : "Failed to remove recipient");
+    } finally {
+      setContactDeleting("");
+    }
   };
 
   const toggleTopic = (email, topicId) => {
@@ -473,6 +570,94 @@ export default function Admin() {
                                 {deleting ? "Deleting…" : "Delete"}
                               </button>
                             </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section className="space-y-4 border-t border-slate-200 pt-8">
+            <h2 className="m-0 text-lg font-semibold text-slate-900">Contact recipients</h2>
+            <p className="m-0 text-sm text-slate-600">
+              Mail to{" "}
+              {contactEmail ? (
+                <span className="font-medium text-slate-800">{contactEmail}</span>
+              ) : (
+                <span className="font-medium text-slate-800">the contact inbox</span>
+              )}{" "}
+              is forwarded to everyone listed here. Each address must also be a verified
+              destination in Cloudflare Email Routing or forwarding will fail.
+            </p>
+
+            <form onSubmit={addContactRecipient} className="flex max-w-xl flex-wrap items-end gap-3">
+              <div className="min-w-[16rem] flex-1">
+                <label htmlFor="contact-email" className="block text-sm font-medium text-slate-800">
+                  Admin email
+                </label>
+                <input
+                  id="contact-email"
+                  type="email"
+                  autoComplete="email"
+                  value={contactInput}
+                  onChange={(event) => setContactInput(event.target.value)}
+                  placeholder="you@gmail.com"
+                  className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={contactAdding}
+                className="inline-flex items-center rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+              >
+                {contactAdding ? "Adding…" : "Add"}
+              </button>
+            </form>
+
+            {contactError ? (
+              <p className="text-sm text-red-600" role="alert">
+                {contactError}
+              </p>
+            ) : null}
+
+            <div className="overflow-x-auto rounded-md border border-slate-200">
+              <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Email</th>
+                    <th className="px-3 py-2 font-medium">Added</th>
+                    <th className="px-3 py-2 font-medium"> </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {contactRecipients.length === 0 && !loading ? (
+                    <tr>
+                      <td colSpan={3} className="px-3 py-6 text-center text-slate-500">
+                        No contact recipients yet. Inbound contact mail will be rejected
+                        until someone is added.
+                      </td>
+                    </tr>
+                  ) : (
+                    contactRecipients.map((row) => {
+                      const deleting = contactDeleting === row.email;
+                      return (
+                        <tr key={row.email}>
+                          <td className="px-3 py-2 font-medium text-slate-900">{row.email}</td>
+                          <td className="px-3 py-2 whitespace-nowrap text-slate-500">
+                            {formatDate(row.created_at)}
+                          </td>
+                          <td className="px-3 py-2">
+                            <button
+                              type="button"
+                              onClick={() => deleteContactRecipient(row)}
+                              disabled={deleting}
+                              className="rounded-md border border-red-200 bg-white px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              {deleting ? "Removing…" : "Remove"}
+                            </button>
                           </td>
                         </tr>
                       );
