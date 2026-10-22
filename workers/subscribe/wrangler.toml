@@ -17,6 +17,8 @@ SITE_ORIGIN = "https://what-llms-can-not-do.org"
 API_ORIGIN = "https://what-llms-can-not-do.org"
 # Public contact inbox (Email Routing → this worker's email handler). Also used as Reply-To.
 CONTACT_EMAIL = "contact@what-llms-can-not-do.org"
+# Cloudflare account for auto-registering Email Routing destinations when admins add emails.
+CF_ACCOUNT_ID = "3f27c9f0b0c6a9fbfd9a0f36454a6bf1"
 
 # Custom hostname for email links (same Cloudflare account as the zone).
 [[routes]]
@@ -38,7 +40,7 @@ crons = ["0 15 * * *"]
 #   REPLY_TO        # fallback Reply-To when CONTACT_EMAIL is unset
 #
 # Contact fan-out (Email Routing):
-#   1. Enable Email Routing on the zone
-#   2. Verify each admin Gmail as a Destination address
-#   3. Route CONTACT_EMAIL → Send to a Worker → wlcd-subscribe
-#   4. Manage recipients on /admin (D1 contact_recipients)
+#   1. Enable Email Routing on the zone (MX records)
+#   2. Route CONTACT_EMAIL → Send to a Worker → wlcd-subscribe
+#   3. Secret CF_API_TOKEN — Email Routing Addresses Edit (auto-register on /admin add)
+#   4. Manage recipients on /admin; owners click Cloudflare’s verification email once

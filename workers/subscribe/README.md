@@ -52,13 +52,17 @@ Note the worker URL (e.g. `https://wlcd-subscribe.<account>.workers.dev`).
 
 ### 5. Contact inbox (Email Routing)
 
-1. Cloudflare dashboard → Email → Email Routing for the zone; enable routing.
-2. Add each admin mailbox (e.g. Gmail) as a **Destination address** and complete verification.
-3. Add a custom address matching `CONTACT_EMAIL` → **Send to a Worker** → `wlcd-subscribe`.
-4. On the site `/admin` page, add those same addresses under **Contact recipients**.
-5. Send a test message to `CONTACT_EMAIL` and confirm every listed inbox receives it.
+1. Cloudflare dashboard → Email → Email Routing for the zone; enable routing (adds MX records).
+2. Add a custom address matching `CONTACT_EMAIL` → **Send to a Worker** → `wlcd-subscribe`.
+3. Create an API token with **Email Routing Addresses → Edit**, then:
+   ```bash
+   npx wrangler secret put CF_API_TOKEN
+   ```
+   (`CF_ACCOUNT_ID` is already in `wrangler.toml` `[vars]`.)
+4. On `/admin`, add contact recipients. The worker registers each address as a Cloudflare destination and Cloudflare emails a **one-time verification link** to that inbox (cannot be skipped).
+5. After verification, send a test to `CONTACT_EMAIL` from a different mailbox and confirm delivery.
 
-`message.forward()` only succeeds for destinations verified in Email Routing. If the recipient list is empty, inbound mail is rejected.
+`message.forward()` only succeeds for verified destinations. If the recipient list is empty, inbound mail is rejected.
 
 ### 6. Site + GitHub Actions
 

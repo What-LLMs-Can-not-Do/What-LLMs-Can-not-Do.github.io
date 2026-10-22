@@ -16,6 +16,10 @@ export type Env = {
   CONTACT_EMAIL?: string;
   /** Optional Reply-To fallback when CONTACT_EMAIL is unset. */
   REPLY_TO?: string;
+  /** Cloudflare account id (for Email Routing destination API). */
+  CF_ACCOUNT_ID?: string;
+  /** API token with Email Routing Addresses Edit (auto-register destinations). */
+  CF_API_TOKEN?: string;
 };
 
 /** Prefer CONTACT_EMAIL (public inbox) over static REPLY_TO. */

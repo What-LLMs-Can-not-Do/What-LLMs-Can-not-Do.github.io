@@ -52,6 +52,7 @@ export default function Admin() {
   const [contactAdding, setContactAdding] = useState(false);
   const [contactDeleting, setContactDeleting] = useState("");
   const [contactError, setContactError] = useState("");
+  const [contactInfo, setContactInfo] = useState("");
 
   const applySubscribers = (rows) => {
     setSubscribers(rows);
@@ -141,6 +142,7 @@ export default function Admin() {
     setContactEmail(null);
     setContactInput("");
     setContactError("");
+    setContactInfo("");
   };
 
   const addContactRecipient = async (event) => {
@@ -154,6 +156,7 @@ export default function Admin() {
 
     setContactAdding(true);
     setContactError("");
+    setContactInfo("");
     try {
       const endpoint =
         SUBSCRIBE_API_URL.replace(/\/$/, "") + "/admin/contact-recipients";
@@ -175,6 +178,9 @@ export default function Admin() {
         return [...prev, recipient];
       });
       setContactInput("");
+      if (result.routing?.message) {
+        setContactInfo(result.routing.message);
+      }
     } catch (err) {
       setContactError(err instanceof Error ? err.message : "Failed to add recipient");
     } finally {
@@ -589,8 +595,9 @@ export default function Admin() {
               ) : (
                 <span className="font-medium text-slate-800">the contact inbox</span>
               )}{" "}
-              is forwarded to everyone listed here. Each address must also be a verified
-              destination in Cloudflare Email Routing or forwarding will fail.
+              is forwarded to everyone listed here. Adding an address also registers it as a
+              Cloudflare Email Routing destination; the owner must click Cloudflare’s
+              verification link once.
             </p>
 
             <form onSubmit={addContactRecipient} className="flex max-w-xl flex-wrap items-end gap-3">
@@ -620,6 +627,11 @@ export default function Admin() {
             {contactError ? (
               <p className="text-sm text-red-600" role="alert">
                 {contactError}
+              </p>
+            ) : null}
+            {contactInfo ? (
+              <p className="text-sm text-slate-700" role="status">
+                {contactInfo}
               </p>
             ) : null}
 

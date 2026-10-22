@@ -18,6 +18,7 @@ import {
   upsertSubscription,
   type NotifyEventInput,
 } from "./db";
+import { ensureRoutingDestination } from "./cloudflare_email";
 import {
   escapeHtml,
   replyToAddress,
@@ -1015,7 +1016,28 @@ const worker = {
       }
 
       const recipient = await addContactRecipient(env.DB, email);
-      return jsonResponse({ ok: true, recipient }, 200, origin, allowed);
+
+      let routing: Awaited<ReturnType<typeof ensureRoutingDestination>>;
+      try {
+        routing = await ensureRoutingDestination({
+          accountId: env.CF_ACCOUNT_ID,
+          apiToken: env.CF_API_TOKEN,
+          email,
+        });
+      } catch (err) {
+        console.error("Failed to register Email Routing destination:", err);
+        routing = {
+          configured: Boolean(env.CF_ACCOUNT_ID?.trim() && env.CF_API_TOKEN?.trim()),
+          verified: false,
+          created: false,
+          message:
+            err instanceof Error
+              ? err.message
+              : "Failed to register Cloudflare Email Routing destination.",
+        };
+      }
+
+      return jsonResponse({ ok: true, recipient, routing }, 200, origin, allowed);
     }
 
     if (request.method === "POST" && url.pathname === "/admin/contact-recipients/delete") {
