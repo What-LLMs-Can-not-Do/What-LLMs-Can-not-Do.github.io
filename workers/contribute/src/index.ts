@@ -13,14 +13,17 @@ import {
   exchangeOAuthCode,
   fileExists,
   getAuthenticatedUser,
+  getBranchTipSha,
   getFileContent,
   getPull,
   isTableContributionPull,
   listClosedPulls,
   listOpenPulls,
   mergePull,
+  replaceBranchOntoBase,
   resolveContributionHead,
   updatePull,
+  updatePullBranch,
   type Env,
   type LeaderboardEntry,
   type TreeFile,
@@ -308,39 +311,78 @@ async function buildContributionFiles(options: {
   };
 }
 
-async function rebasePullOntoBase(options: {
+async function rewritePullOntoBase(options: {
   token: string;
   repo: string;
   pr: Awaited<ReturnType<typeof getPull>>;
   data: ContributionData;
   lookupTitle?: string;
   commitMessage: string;
+  audioEntries?: { name: string; bytes: Uint8Array }[];
 }): Promise<{ commitSha: string; paperTitle: string }> {
-  const { token, repo, pr, data, lookupTitle, commitMessage } = options;
+  const { token, repo, pr, data, lookupTitle, commitMessage, audioEntries } = options;
   if (pr.head.repo == null) {
     throw new Error("PR head repository is unavailable (fork deleted?)");
   }
   const baseRef = pr.base.ref || "main";
+  const headRepo = pr.head.repo.full_name;
   const built = await buildContributionFiles({
     token,
     repo,
     baseRef,
     data,
     lookupTitle,
+    audioEntries,
   });
-  const { commitSha } = await commitFilesToBranch({
-    token,
-    headRepo: pr.head.repo.full_name,
-    branchName: pr.head.ref,
-    headSha: pr.head.sha,
-    commitMessage,
-    files: built.files,
-    author: {
-      name: "WLCD Review",
-      email: "noreply@what-llms-can-not-do.org",
-    },
-  });
-  return { commitSha, paperTitle: built.paperTitle };
+  const baseSha = await getBranchTipSha(token, repo, baseRef);
+  const author = {
+    name: "WLCD Review",
+    email: "noreply@what-llms-can-not-do.org",
+  };
+
+  // Prefer a history rewrite parented on current main so the PR merges cleanly.
+  // Appending onto a divergent tip leaves conflicts even when file contents are fixed.
+  try {
+    const { commitSha } = await replaceBranchOntoBase({
+      token,
+      baseRepo: repo,
+      headRepo,
+      branchName: pr.head.ref,
+      baseSha,
+      commitMessage,
+      files: built.files,
+      author,
+    });
+    return { commitSha, paperTitle: built.paperTitle };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    // Forks may not have upstream main objects — merge main into the PR first,
+    // then commit the rebuilt files on top of the updated tip.
+    if (headRepo !== repo) {
+      try {
+        await updatePullBranch(token, repo, pr.number, pr.head.sha);
+      } catch (updateErr) {
+        const updateDetail =
+          updateErr instanceof Error ? updateErr.message : String(updateErr);
+        throw new Error(
+          `Could not rewrite PR onto ${baseRef} (${detail}). ` +
+            `Also failed to update branch from ${baseRef} (${updateDetail}).`
+        );
+      }
+      const refreshed = await getPull(token, repo, pr.number);
+      const { commitSha } = await commitFilesToBranch({
+        token,
+        headRepo,
+        branchName: refreshed.head.ref,
+        headSha: refreshed.head.sha,
+        commitMessage,
+        files: built.files,
+        author,
+      });
+      return { commitSha, paperTitle: built.paperTitle };
+    }
+    throw err;
+  }
 }
 
 async function collectAudioFromForm(
@@ -517,17 +559,18 @@ export default {
               allowed
             );
           }
-          const baseSha = pr.base.sha;
+          // Always diff against current base tip (not the possibly-stale PR base.sha).
+          const baseRef = pr.base.ref || "main";
           const headSha = pr.head.sha;
           const headRepo = pr.head.repo?.full_name || repo;
 
           const [baseData, headData, baseModels, headModels, baseKeywords, headKeywords] =
             await Promise.all([
-              getFileContent(token, repo, "public/data.csv", baseSha),
+              getFileContent(token, repo, "public/data.csv", baseRef),
               getFileContent(token, headRepo, "public/data.csv", headSha),
-              getFileContent(token, repo, "public/models.csv", baseSha),
+              getFileContent(token, repo, "public/models.csv", baseRef),
               getFileContent(token, headRepo, "public/models.csv", headSha),
-              getFileContent(token, repo, "public/keywords.csv", baseSha),
+              getFileContent(token, repo, "public/keywords.csv", baseRef),
               getFileContent(token, headRepo, "public/keywords.csv", headSha),
             ]);
 
@@ -621,19 +664,21 @@ export default {
           if (audioResult instanceof Response) return audioResult;
           const { audioEntries } = audioResult;
 
-          const baseRef = pr.base.ref || "main";
-          const built = await buildContributionFiles({
+          const lookupTitle =
+            String(data["Paper title"] || "").trim() ||
+            (parsedBaselineTitleFromPr(pr.title) ?? undefined);
+          const contributionType = String(data.contribution_type || "addition").toLowerCase();
+          const kind = contributionType === "change" ? "change" : "addition";
+          // Probe whether anything would change before rewriting history.
+          const probe = await buildContributionFiles({
             token,
             repo,
-            baseRef,
+            baseRef: pr.base.ref || "main",
             data,
             audioEntries,
-            lookupTitle:
-              String(data["Paper title"] || "").trim() ||
-              (parsedBaselineTitleFromPr(pr.title) ?? undefined),
+            lookupTitle,
           });
-
-          if (!built.rowChanged) {
+          if (!probe.rowChanged) {
             return jsonResponse(
               {
                 error:
@@ -645,24 +690,18 @@ export default {
             );
           }
 
-          const kind = built.isChange ? "change" : "addition";
-          const commitMessage = `Review edit: Table ${kind}: ${built.paperTitle}`;
-          const { commitSha } = await commitFilesToBranch({
+          const { commitSha, paperTitle } = await rewritePullOntoBase({
             token,
-            headRepo: pr.head.repo.full_name,
-            branchName: pr.head.ref,
-            headSha: pr.head.sha,
-            commitMessage,
-            files: built.files,
-            author: {
-              name: "WLCD Review",
-              email: "noreply@what-llms-can-not-do.org",
-            },
+            repo,
+            pr,
+            data,
+            lookupTitle,
+            audioEntries,
+            commitMessage: `Review edit: Table ${kind}: ${probe.paperTitle}`,
           });
 
-          const desiredTitle = built.isChange
-            ? `Table change: ${built.paperTitle}`
-            : `Table addition: ${built.paperTitle}`;
+          const desiredTitle =
+            kind === "change" ? `Table change: ${paperTitle}` : `Table addition: ${paperTitle}`;
           if ((pr.title || "") !== desiredTitle) {
             try {
               await updatePull(token, repo, prNumber, { title: desiredTitle });
@@ -680,7 +719,7 @@ export default {
               pr_number: prNumber,
               pr_url: pr.html_url,
               commit_sha: commitSha,
-              paper_title: built.paperTitle,
+              paper_title: paperTitle,
             },
             200,
             origin,
@@ -698,6 +737,14 @@ export default {
               allowed
             );
           }
+          if (pr.head.repo == null) {
+            return jsonResponse(
+              { error: "PR head repository is unavailable (fork deleted?)" },
+              400,
+              origin,
+              allowed
+            );
+          }
 
           const tryMerge = async () =>
             mergePull({
@@ -708,99 +755,90 @@ export default {
               mergeMethod: "merge",
             });
 
-          let rebased = false;
-          let rebaseSha: string | undefined;
-          const needsRebase =
-            pr.mergeable === false ||
-            pr.mergeable_state === "dirty" ||
-            pr.mergeable_state === "unstable";
-
-          const rebaseFromHead = async () => {
-            if (pr.head.repo == null) {
-              throw new Error("PR head repository is unavailable (fork deleted?)");
-            }
-            const baseRef = pr.base.ref || "main";
-            const headRepo = pr.head.repo.full_name;
-            const [baseData, headData, baseModels, headModels, baseKeywords, headKeywords] =
-              await Promise.all([
-                getFileContent(token, repo, "public/data.csv", baseRef),
-                getFileContent(token, headRepo, "public/data.csv", pr.head.sha),
-                getFileContent(token, repo, "public/models.csv", baseRef),
-                getFileContent(token, headRepo, "public/models.csv", pr.head.sha),
-                getFileContent(token, repo, "public/keywords.csv", baseRef),
-                getFileContent(token, headRepo, "public/keywords.csv", pr.head.sha),
-              ]);
-            if (!baseData || !headData) {
-              throw new Error("Could not read public/data.csv to resolve merge conflicts");
-            }
-            const parsed = parseContributionFromCsvDiff({
-              baseDataCsv: baseData.content,
-              headDataCsv: headData.content,
-              baseModelsCsv: baseModels?.content,
-              headModelsCsv: headModels?.content,
-              baseKeywordsCsv: baseKeywords?.content,
-              headKeywordsCsv: headKeywords?.content,
-              prTitle: pr.title || "",
-            });
-            const data: ContributionData = {
-              contribution_type: parsed.contribution_type,
-              ...parsed.form,
-            };
-            if (parsed.ID) data.ID = parsed.ID;
-            if (parsed.new_models.length) data.new_models = parsed.new_models;
-            if (parsed.new_keywords.length) data.new_keywords = parsed.new_keywords;
-
-            const lookupTitle =
-              String(parsed.baseline?.["Paper title"] || parsed.form["Paper title"] || "").trim() ||
-              parsedBaselineTitleFromPr(pr.title) ||
-              undefined;
-            const kind = parsed.contribution_type;
-            const { commitSha, paperTitle } = await rebasePullOntoBase({
-              token,
-              repo,
-              pr,
-              data,
-              lookupTitle,
-              commitMessage: `Resolve conflicts: Table ${kind}: ${parsed.paper_title}`,
-            });
-            rebased = true;
-            rebaseSha = commitSha;
-            // Refresh PR tip after rebase commit.
-            pr = await getPull(token, repo, prNumber);
-            if (paperTitle && !(pr.title || "").includes(paperTitle)) {
-              try {
-                const kind = parsed.contribution_type;
-                await updatePull(token, repo, prNumber, {
-                  title:
-                    kind === "change"
-                      ? `Table change: ${paperTitle}`
-                      : `Table addition: ${paperTitle}`,
-                });
-              } catch {
-                // Non-fatal.
-              }
-            }
+          // Always rewrite onto current main before merging. Appending fixed
+          // CSV content onto a divergent tip still leaves merge conflicts.
+          const baseRef = pr.base.ref || "main";
+          const headRepo = pr.head.repo.full_name;
+          const [baseData, headData, baseModels, headModels, baseKeywords, headKeywords] =
+            await Promise.all([
+              getFileContent(token, repo, "public/data.csv", baseRef),
+              getFileContent(token, headRepo, "public/data.csv", pr.head.sha),
+              getFileContent(token, repo, "public/models.csv", baseRef),
+              getFileContent(token, headRepo, "public/models.csv", pr.head.sha),
+              getFileContent(token, repo, "public/keywords.csv", baseRef),
+              getFileContent(token, headRepo, "public/keywords.csv", pr.head.sha),
+            ]);
+          if (!baseData || !headData) {
+            throw new Error("Could not read public/data.csv to prepare merge");
+          }
+          const parsed = parseContributionFromCsvDiff({
+            baseDataCsv: baseData.content,
+            headDataCsv: headData.content,
+            baseModelsCsv: baseModels?.content,
+            headModelsCsv: headModels?.content,
+            baseKeywordsCsv: baseKeywords?.content,
+            headKeywordsCsv: headKeywords?.content,
+            prTitle: pr.title || "",
+          });
+          const data: ContributionData = {
+            contribution_type: parsed.contribution_type,
+            ...parsed.form,
           };
+          if (parsed.ID) data.ID = parsed.ID;
+          if (parsed.new_models.length) data.new_models = parsed.new_models;
+          if (parsed.new_keywords.length) data.new_keywords = parsed.new_keywords;
 
-          if (needsRebase) {
-            await rebaseFromHead();
+          const lookupTitle =
+            String(parsed.baseline?.["Paper title"] || parsed.form["Paper title"] || "").trim() ||
+            parsedBaselineTitleFromPr(pr.title) ||
+            undefined;
+          const kind = parsed.contribution_type;
+          const { commitSha: rebaseSha, paperTitle } = await rewritePullOntoBase({
+            token,
+            repo,
+            pr,
+            data,
+            lookupTitle,
+            commitMessage: `Resolve onto main: Table ${kind}: ${parsed.paper_title}`,
+          });
+          pr = await getPull(token, repo, prNumber);
+          if (paperTitle && !(pr.title || "").includes(paperTitle)) {
+            try {
+              await updatePull(token, repo, prNumber, {
+                title:
+                  kind === "change"
+                    ? `Table change: ${paperTitle}`
+                    : `Table addition: ${paperTitle}`,
+              });
+            } catch {
+              // Non-fatal.
+            }
           }
 
-          let result;
-          try {
-            result = await tryMerge();
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            if (!rebased && /merge conflict|405/i.test(message)) {
-              await rebaseFromHead();
+          // mergeable can stay null briefly after a force-push; retry a few times.
+          let result: Awaited<ReturnType<typeof mergePull>> | null = null;
+          let lastError: unknown = null;
+          for (let attempt = 0; attempt < 5; attempt++) {
+            try {
               result = await tryMerge();
-            } else if (rebased && /merge conflict|405/i.test(message)) {
-              throw new Error(
-                "Still has merge conflicts after updating onto main. Open the PR on GitHub to resolve manually."
-              );
-            } else {
-              throw err;
+              lastError = null;
+              break;
+            } catch (err) {
+              lastError = err;
+              const message = err instanceof Error ? err.message : String(err);
+              if (!/merge conflict|405|not mergeable|Preview/i.test(message)) {
+                throw err;
+              }
+              await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+              pr = await getPull(token, repo, prNumber);
             }
+          }
+          if (!result) {
+            const message =
+              lastError instanceof Error ? lastError.message : String(lastError || "Merge failed");
+            throw new Error(
+              `Still cannot merge after rewriting onto ${baseRef}: ${message}`
+            );
           }
 
           return jsonResponse(
@@ -808,12 +846,10 @@ export default {
               ok: true,
               merged: result.merged,
               sha: result.sha,
-              message: rebased
-                ? `Updated onto main then merged${rebaseSha ? ` (rebase ${rebaseSha.slice(0, 7)})` : ""}.`
-                : result.message,
+              message: `Rewrote onto main then merged (rewrite ${rebaseSha.slice(0, 7)}).`,
               pr_number: prNumber,
               pr_url: pr.html_url,
-              rebased,
+              rebased: true,
             },
             200,
             origin,

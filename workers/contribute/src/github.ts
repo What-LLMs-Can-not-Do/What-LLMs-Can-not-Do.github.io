@@ -405,24 +405,47 @@ export async function updatePull(
   });
 }
 
-/** Commit file updates on top of an existing branch (e.g. a PR head). */
-export async function commitFilesToBranch(options: {
+async function buildCommitWithFiles(options: {
   token: string;
+  /** Repo that receives blobs/commits/refs (PR head repo). */
   headRepo: string;
-  branchName: string;
-  /** Current tip SHA of the branch (parent commit). */
-  headSha: string;
+  /** Commit whose tree is the base_tree and (usually) the parent. */
+  parentSha: string;
+  /**
+   * Optional repo to resolve parentSha/tree from when it lives on upstream
+   * but not yet on a fork. Defaults to headRepo.
+   */
+  parentRepo?: string;
   commitMessage: string;
   files: TreeFile[];
   author?: { name: string; email: string };
-}): Promise<{ commitSha: string }> {
-  const { token, headRepo, branchName, headSha, commitMessage, files, author } = options;
-
-  const headCommit = await ghJson<{ tree: { sha: string } }>(
+}): Promise<string> {
+  const {
     token,
-    `/repos/${headRepo}/git/commits/${headSha}`
-  );
-  const baseTreeSha = headCommit.tree.sha;
+    headRepo,
+    parentSha,
+    parentRepo = headRepo,
+    commitMessage,
+    files,
+    author,
+  } = options;
+
+  // Prefer reading the parent commit from headRepo; fall back to parentRepo
+  // (upstream) when rewriting a fork branch onto a newer main tip.
+  let parentCommit: { tree: { sha: string } };
+  try {
+    parentCommit = await ghJson<{ tree: { sha: string } }>(
+      token,
+      `/repos/${headRepo}/git/commits/${parentSha}`
+    );
+  } catch {
+    if (parentRepo === headRepo) throw new Error(`Parent commit ${parentSha} not found in ${headRepo}`);
+    parentCommit = await ghJson<{ tree: { sha: string } }>(
+      token,
+      `/repos/${parentRepo}/git/commits/${parentSha}`
+    );
+  }
+  const baseTreeSha = parentCommit.tree.sha;
 
   const treeItems: { path: string; mode: string; type: string; sha: string }[] = [];
   for (const file of files) {
@@ -440,32 +463,152 @@ export async function commitFilesToBranch(options: {
     });
   }
 
-  const tree = await ghJson<{ sha: string }>(token, `/repos/${headRepo}/git/trees`, {
-    method: "POST",
-    body: JSON.stringify({ base_tree: baseTreeSha, tree: treeItems }),
-  });
+  // base_tree must exist in headRepo. If parent was only on upstream, recreate
+  // that tree in headRepo by posting the same tree SHA reference via blobs we
+  // already have — GitHub accepts base_tree if the tree object is reachable.
+  // When parent commit was fetched from upstream only, copy the tree by
+  // creating the commit with parents: [parentSha] may fail if parentSha is
+  // unknown to headRepo. In that case create an orphan-linked commit is not
+  // possible; caller should use same-repo heads or update-branch first.
+  let tree: { sha: string };
+  try {
+    tree = await ghJson<{ sha: string }>(token, `/repos/${headRepo}/git/trees`, {
+      method: "POST",
+      body: JSON.stringify({ base_tree: baseTreeSha, tree: treeItems }),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Could not build git tree on ${headRepo} from parent ${parentSha.slice(0, 7)}: ${msg}`
+    );
+  }
 
   const commitBody: Record<string, unknown> = {
     message: commitMessage,
     tree: tree.sha,
-    parents: [headSha],
+    parents: [parentSha],
   };
   if (author) {
     commitBody.author = author;
     commitBody.committer = author;
   }
 
-  const newCommit = await ghJson<{ sha: string }>(token, `/repos/${headRepo}/git/commits`, {
-    method: "POST",
-    body: JSON.stringify(commitBody),
+  try {
+    const newCommit = await ghJson<{ sha: string }>(token, `/repos/${headRepo}/git/commits`, {
+      method: "POST",
+      body: JSON.stringify(commitBody),
+    });
+    return newCommit.sha;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Could not create commit on ${headRepo} with parent ${parentSha.slice(0, 7)}: ${msg}. ` +
+        `If this is a fork, main may be too far ahead to rewrite; ask the author to update the branch.`
+    );
+  }
+}
+
+/** Commit file updates on top of an existing branch tip (linear append). */
+export async function commitFilesToBranch(options: {
+  token: string;
+  headRepo: string;
+  branchName: string;
+  /** Current tip SHA of the branch (parent commit). */
+  headSha: string;
+  commitMessage: string;
+  files: TreeFile[];
+  author?: { name: string; email: string };
+}): Promise<{ commitSha: string }> {
+  const { token, headRepo, branchName, headSha, commitMessage, files, author } = options;
+
+  const commitSha = await buildCommitWithFiles({
+    token,
+    headRepo,
+    parentSha: headSha,
+    commitMessage,
+    files,
+    author,
   });
 
   await ghJson(token, `/repos/${headRepo}/git/refs/heads/${encodeURIComponent(branchName)}`, {
     method: "PATCH",
-    body: JSON.stringify({ sha: newCommit.sha, force: false }),
+    body: JSON.stringify({ sha: commitSha, force: false }),
   });
 
-  return { commitSha: newCommit.sha };
+  return { commitSha };
+}
+
+/**
+ * Replace a PR branch with a single commit based on upstream base tip.
+ * Needed to clear merge conflicts: appending onto a divergent tip still conflicts.
+ */
+export async function replaceBranchOntoBase(options: {
+  token: string;
+  /** Upstream repo (has the base branch tip). */
+  baseRepo: string;
+  headRepo: string;
+  branchName: string;
+  /** Current tip of the base branch (e.g. main SHA). */
+  baseSha: string;
+  commitMessage: string;
+  files: TreeFile[];
+  author?: { name: string; email: string };
+}): Promise<{ commitSha: string }> {
+  const {
+    token,
+    baseRepo,
+    headRepo,
+    branchName,
+    baseSha,
+    commitMessage,
+    files,
+    author,
+  } = options;
+
+  const commitSha = await buildCommitWithFiles({
+    token,
+    headRepo,
+    parentSha: baseSha,
+    parentRepo: baseRepo,
+    commitMessage,
+    files,
+    author,
+  });
+
+  await ghJson(token, `/repos/${headRepo}/git/refs/heads/${encodeURIComponent(branchName)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ sha: commitSha, force: true }),
+  });
+
+  return { commitSha };
+}
+
+/** Resolve base branch tip SHA. */
+export async function getBranchTipSha(
+  token: string,
+  repo: string,
+  branch: string
+): Promise<string> {
+  const ref = await ghJson<{ object: { sha: string } }>(
+    token,
+    `/repos/${repo}/git/ref/heads/${encodeURIComponent(branch)}`
+  );
+  return ref.object.sha;
+}
+
+/** Ask GitHub to merge the base branch into the PR head (may fail on conflicts). */
+export async function updatePullBranch(
+  token: string,
+  repo: string,
+  number: number,
+  expectedHeadSha?: string
+): Promise<{ message: string; url?: string }> {
+  const body: Record<string, unknown> = {};
+  if (expectedHeadSha) body.expected_head_sha = expectedHeadSha;
+  return ghJson(token, `/repos/${repo}/pulls/${number}/update-branch`, {
+    method: "PUT",
+    body: JSON.stringify(body),
+  });
 }
 
 export async function mergePull(options: {
