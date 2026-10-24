@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
 
 const TIMELINE = [
-  { label: "Direct paper submission deadline", date: "January 15, 2027" },
-  { label: "Pre-reviewed ARR commitment deadline", date: "TBA" },
-  { label: "Notification of acceptance", date: "February 16, 2027" },
-  { label: "Camera-ready paper due", date: "March 15, 2027" },
+  { label: "Direct paper submission deadline", date: "March 1, 2027" },
+  { label: "Pre-reviewed ARR commitment deadline", date: "March 5, 2027" },
+  { label: "Notification of acceptance", date: "March 15, 2027" },
+  { label: "Camera-ready paper due", date: "March 22, 2027" },
   { label: "Workshop", date: "Full day, one of May 9–14, 2027" },
 ];
 
@@ -15,18 +15,18 @@ export default function Cfp() {
         Call for Papers
       </h1>
       <p className="mt-2 text-base font-medium text-slate-800 sm:text-lg">
-        WLCD 2027 – The First Workshop on What LLMs Cannot Do
+        WLCD 2027 – The First Workshop on What LLMs Can(not) Do
       </p>
 
       <div className="mt-6 space-y-4 text-sm leading-relaxed text-slate-600">
         <p>
-          What LLMs Cannot Do (WLCD) will be a workshop at COLING in Macau. Our
+          WLCD will be a workshop at COLING in Macau. Our
           goal is to keep track of the abilities of state-of-the-art Large
           Language Models (LLMs) in comparison to humans, and we are looking for
           contributors! At the workshop, expect a program full of invited talks,
           posters, discussions, and ideas.
         </p>
-        <p>
+        <p className="!mt-8">
           Read below for details on submitting a paper to the workshop.
           Additionally, if you have a relevant paper that is already published
           from 2025 or later and would fit our{" "}
@@ -120,8 +120,8 @@ export default function Cfp() {
             analysis is welcome, but not required.
           </p>
           <p>
-            We will accept submissions via ACL Rolling Review (ARR) as well as
-            independently on OpenReview.
+            We will accept pre-reviewed submissions from ACL Rolling Review
+            (ARR) as well as independently on OpenReview.
           </p>
         </div>
       </section>
