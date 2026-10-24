@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Admin from "./Admin.jsx";
 import Analytics from "./Analytics.jsx";
+import Cfp from "./Cfp.jsx";
 import Contribute from "./Contribute.jsx";
 import Home from "./Home.jsx";
 import Leaderboard from "./Leaderboard.jsx";
@@ -25,6 +26,7 @@ function AppShell() {
       {!hideChrome ? <NavBar /> : null}
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/cfp" element={<Cfp />} />
         <Route path="/table" element={<Table />} />
         <Route path="/contribute" element={<Contribute />} />
         <Route path="/subscribe" element={<Subscribe />} />

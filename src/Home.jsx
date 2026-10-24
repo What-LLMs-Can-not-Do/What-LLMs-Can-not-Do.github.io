@@ -63,8 +63,14 @@ export default function Home() {
           interested.
         </p>
         <p className="mt-6 text-sm leading-relaxed text-slate-600">
-          We&apos;ve been accepted as a workshop for COLING 2027! More details
-          coming soon. See you in Macau!
+          We&apos;ve been accepted as a workshop for COLING 2027! See our{" "}
+          <Link
+            to="/cfp"
+            className="font-medium text-slate-800 underline hover:text-slate-950"
+          >
+            Call for Papers
+          </Link>
+          . See you in Macau!
         </p>
       </section>
 
@@ -78,6 +84,18 @@ export default function Home() {
             </li>
           ))}
         </ul>
+      </section>
+
+      <section className="mt-12 space-y-3">
+        <h2 className="text-lg font-semibold text-slate-900">Contact</h2>
+        <p className="text-sm leading-relaxed text-slate-600">
+          <a
+            href="mailto:contact@what-llms-can-not-do.org"
+            className="font-medium text-slate-800 underline hover:text-slate-950"
+          >
+            contact@what-llms-can-not-do.org
+          </a>
+        </p>
       </section>
     </main>
   );
