@@ -1,10 +1,10 @@
 import { Link } from "react-router-dom";
 
 const TIMELINE = [
-  { label: "Direct paper submission deadline", date: "February 22, 2027" },
-  { label: "Pre-reviewed ARR commitment deadline", date: "February 26, 2027" },
-  { label: "Notification of acceptance", date: "March 8, 2027" },
-  { label: "Camera-ready paper due", date: "March 15, 2027" },
+  { label: "Direct paper submission deadline", date: "February 2027" },
+  { label: "Pre-reviewed ARR commitment deadline", date: "February 2027" },
+  { label: "Notification of acceptance", date: "March 2027" },
+  { label: "Camera-ready paper due", date: "March 2027" },
   { label: "Workshop", date: "Full day, one of May 9–14, 2027" },
 ];
 
