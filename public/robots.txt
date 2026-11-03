@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://what-llms-can-not-do.org/sitemap.xml

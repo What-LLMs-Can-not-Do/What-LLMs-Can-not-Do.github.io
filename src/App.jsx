@@ -13,7 +13,7 @@ import Table from "./table-scaffold.jsx";
 
 const basename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
 
-function AppShell() {
+export function AppShell() {
   const { pathname } = useLocation();
   const hideChrome =
     pathname === "/confirm" ||
@@ -24,6 +24,7 @@ function AppShell() {
   return (
     <>
       {!hideChrome ? <NavBar /> : null}
+      {/* Public pages must also be listed in scripts/prerender.mjs (static HTML + sitemap). */}
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/cfp" element={<Cfp />} />
