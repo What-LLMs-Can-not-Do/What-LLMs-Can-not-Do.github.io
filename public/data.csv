@@ -778,3 +778,29 @@ Cross-lingual tasks,,"Text, Multilinguality, Ethics, Politics, Robustness",When 
 Reasoning,,"Text, Multilinguality, Reasoning, Open-ended, Math",PluraMath: Extending Mathematical Reasoning Evaluation Beyond High-Resource Languages,Apache-2.0,"Hindi, Turkish, Polish, Ukrainian, Uzbek, Odia, Amharic, Greek, Kazakh, Czech, Hebrew, Serbian, Tatar, Slovak, Catalan, Chuvash, Upper Sorbian, Lower Sorbian, English, Spanish, German, Russian","Qwen3.5-0.8B, LFM2.5-1.2B-Thinking, Ouro-1.4B-Thinking, R1-Distill-Qwen-1.5B, Qwen3.5-2B, Ouro-2.6B-Thinking, Ministral-3-3B-Reasoning, Gemma-3-4B, Qwen3.5-4B, OLMo-3-7B-Think, R1-0528-Qwen3-8B, Ministral-3-8B-Reasoning, Qwen3.5-9B, Ministral-3-14B-Reasoning, gpt-oss-20b, Nemotron-3-Nano-30B-A3B-Reasoning, Gemma-4-31B, Qwen3.5-35B-A3B, R1-Distill-Llama-70B, gpt-oss-120b, Qwen3.5-122B-A10B, Qwen3-235B-A22B-Thinking, DeepSeek-V3.2, Kimi-K2.5, Claude-Haiku-4.5, Gemini-2.5-Flash, GPT-5.4",2026,https://arxiv.org/abs/2607.05992,https://huggingface.co/datasets/tum-nlp/PluraMath,https://tum-nlp.github.io/pluramath/,"Several level math reasoning benchmark extended to 18 underrepresented languages. For low levels, models are good, further: heavily drop for even English and other languages.",,yes,Humans,Humans,Humans,"Math task: Качки Дженет несуть по 16 яєць на день. Вона їсть три на сніданок щоранку і пече кекси для своїх друзів щодня, використовуючи чотири. Залишок вона щодня продає на фермерському ринку по 2 $ за свіже качине яйце. Скільки в доларах вона заробляє на фермерському ринку щодня?
 
 Expected Answer: \boxed{18}","Mathematical reasoning has become a central task for evaluating and tuning reasoning Large Language Models (LLMs), yet existing benchmarks remain heavily biased toward high-resource languages, with English and Chinese dominating both pre-training corpora and evaluation suites. The recently released PolyMath (Wang et al., 2025) dataset represents a significant step forward, yet its coverage is still limited to 18 only high-resource languages. To address this gap, we introduce PluraMath, an extension of PolyMath to 18 additional {underrepresented languages spanning 6 language families---ranging from mid-resource to extreme low-resource settings. We constructed the dataset through a human-curated pipeline, where native speakers thoroughly validated pre-computed translations. Using PluraMath, we then benchmark 27 reasoning LLMs across four model scales---small, mid-size, large, and closed-source ensembles---probing the multilingual mathematical reasoning capabilities of state-of-the-art models under diverse linguistic conditions. Our fine-grained analysis confirms a persistent gap in mathematical reasoning performance between high-resource and underrepresented languages, with stronger results largely associated with better instruction-following ability. We fully open-source our dataset, data acquisition pipeline, and evaluation framework, with the goal of lowering the barrier to multilingual benchmark development for underrepresented communities.",
+Reasoning,,"Text, Reasoning, Lexicon, Semantics, Classification",NYT-Connections: A Deceptively Simple Text Classification Task that Stumps System-1 Thinkers,CC BY 4.0,English,"Claude-3.5-Sonnet, GPT-4, GPT-4o, Gemini-1.5-Pro, Llama-3-70B-Instruct, Llama-3.1-405B-Instruct",2025,https://aclanthology.org/2025.coling-main.134/,https://huggingface.co/datasets/tm21cy/NYT-Connections,https://arxiv.org/abs/2412.01621,358 word-grouping puzzles from NYT Connections built to penalize System-1 shortcuts; even GPT-4 trails human players by nearly 30%,,yes,Humans,Humans,,"Group these 16 words into 4 groups of 4 related words. Trap example: NORMAL, DRY, COMBINATION, OILY form ""Skin types"", but NORMAL, STANDARD, BENCHMARK tempt a ""Status quo"" group of three, which makes four complete groups impossible.","Large Language Models (LLMs) have shown
+impressive performance on various bench-
+marks, yet their ability to engage in delib-
+erate reasoning remains questionable. We
+present NYT-CONNECTIONS, a collection of
+358 simple word classification puzzles de-
+rived from the New York Times Connections
+game. This benchmark is designed to penalize
+quick, intuitive “System 1” thinking, isolating
+fundamental reasoning skills. We evaluated
+six recent LLMs, a simple machine learning
+heuristic, and humans across three configura-
+tions: single-attempt, multiple attempts with-
+out hints, and multiple attempts with contex-
+tual hints. Our findings reveal a significant
+performance gap: even top-performing LLMs
+like GPT-4 fall short of human performance
+by nearly 30%. Notably, advanced prompt-
+ing techniques such as Chain-of-Thought and
+Self-Consistency show diminishing returns as
+task difficulty increases. NYT-CONNECTIONS
+uniquely combines linguistic isolation, resis-
+tance to intuitive shortcuts, and regular updates
+to mitigate data leakage, offering a novel tool
+for assessing LLM reasoning capabilities.","Human baseline from 3 evaluators only
+A non-peer-reviewed 2025 leaderboard suggests newer reasoning models beat average (but not elite) human players"
