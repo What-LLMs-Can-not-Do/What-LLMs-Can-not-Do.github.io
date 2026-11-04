@@ -778,3 +778,36 @@ Cross-lingual tasks,,"Text, Multilinguality, Ethics, Politics, Robustness",When 
 Reasoning,,"Text, Multilinguality, Reasoning, Open-ended, Math",PluraMath: Extending Mathematical Reasoning Evaluation Beyond High-Resource Languages,Apache-2.0,"Hindi, Turkish, Polish, Ukrainian, Uzbek, Odia, Amharic, Greek, Kazakh, Czech, Hebrew, Serbian, Tatar, Slovak, Catalan, Chuvash, Upper Sorbian, Lower Sorbian, English, Spanish, German, Russian","Qwen3.5-0.8B, LFM2.5-1.2B-Thinking, Ouro-1.4B-Thinking, R1-Distill-Qwen-1.5B, Qwen3.5-2B, Ouro-2.6B-Thinking, Ministral-3-3B-Reasoning, Gemma-3-4B, Qwen3.5-4B, OLMo-3-7B-Think, R1-0528-Qwen3-8B, Ministral-3-8B-Reasoning, Qwen3.5-9B, Ministral-3-14B-Reasoning, gpt-oss-20b, Nemotron-3-Nano-30B-A3B-Reasoning, Gemma-4-31B, Qwen3.5-35B-A3B, R1-Distill-Llama-70B, gpt-oss-120b, Qwen3.5-122B-A10B, Qwen3-235B-A22B-Thinking, DeepSeek-V3.2, Kimi-K2.5, Claude-Haiku-4.5, Gemini-2.5-Flash, GPT-5.4",2026,https://arxiv.org/abs/2607.05992,https://huggingface.co/datasets/tum-nlp/PluraMath,https://tum-nlp.github.io/pluramath/,"Several level math reasoning benchmark extended to 18 underrepresented languages. For low levels, models are good, further: heavily drop for even English and other languages.",,yes,Humans,Humans,Humans,"Math task: Качки Дженет несуть по 16 яєць на день. Вона їсть три на сніданок щоранку і пече кекси для своїх друзів щодня, використовуючи чотири. Залишок вона щодня продає на фермерському ринку по 2 $ за свіже качине яйце. Скільки в доларах вона заробляє на фермерському ринку щодня?
 
 Expected Answer: \boxed{18}","Mathematical reasoning has become a central task for evaluating and tuning reasoning Large Language Models (LLMs), yet existing benchmarks remain heavily biased toward high-resource languages, with English and Chinese dominating both pre-training corpora and evaluation suites. The recently released PolyMath (Wang et al., 2025) dataset represents a significant step forward, yet its coverage is still limited to 18 only high-resource languages. To address this gap, we introduce PluraMath, an extension of PolyMath to 18 additional {underrepresented languages spanning 6 language families---ranging from mid-resource to extreme low-resource settings. We constructed the dataset through a human-curated pipeline, where native speakers thoroughly validated pre-computed translations. Using PluraMath, we then benchmark 27 reasoning LLMs across four model scales---small, mid-size, large, and closed-source ensembles---probing the multilingual mathematical reasoning capabilities of state-of-the-art models under diverse linguistic conditions. Our fine-grained analysis confirms a persistent gap in mathematical reasoning performance between high-resource and underrepresented languages, with stronger results largely associated with better instruction-following ability. We fully open-source our dataset, data acquisition pipeline, and evaluation framework, with the goal of lowering the barrier to multilingual benchmark development for underrepresented communities.",
+Reasoning,,"Text, Reasoning, Long-context, Open-ended, Psychology, Discourse, Pragmatics",InMind: Evaluating LLMs in Capturing and Applying Individual Human Reasoning Styles,None listed,Mandarin Chinese,"GPT-4o, o3-Mini, DeepSeek-R1, Qwq-32B, Qwen-2.5-Instruct-7B",2025,https://aclanthology.org/2025.emnlp-main.254.pdf,https://github.com/leroy9472/InMind,,"Annotated Mandarin Avalon games testing whether LLMs can apply a player's reasoning style; models struggle without strategy traces, while human experts stay accurate.",,yes,Humans,Humans,,"Fill in the masked player IDs in the subject's post-game reflection: ""[MASK] opposed the previous team and then formed an all-good team… I suspect [MASK] might be Merlin.""","LLMs have shown strong performance on
+human-centric reasoning tasks. While previ-
+ous evaluations have explored whether LLMs
+can infer intentions or detect deception, they
+often overlook the individualized reasoning
+styles that influence how people interpret and
+act in social contexts. Social deduction games
+(SDGs) provide a natural testbed for evaluating
+individualized reasoning styles, where differ-
+ent players may adopt diverse but contextually
+valid reasoning strategies under identical condi-
+tions. To address this, we introduce InMind, a
+cognitively grounded evaluation framework de-
+signed to assess whether LLMs can capture and
+apply personalized reasoning styles in SDGs.
+InMind enhances structured gameplay data
+with round-level strategy traces and post-game
+reflections, collected under both Observer and
+Participant modes. It supports four cognitively
+motivated tasks that jointly evaluate both static
+alignment and dynamic adaptation. As a case
+study, we apply InMind to the game Avalon,
+evaluating 11 state-of-the-art LLMs.1 General-
+purpose LLMs, even GPT-4o frequently rely on
+lexical cues, struggling to anchor reflections in
+temporal gameplay or adapt to evolving strate-
+gies. In contrast, reasoning-enhanced LLMs
+like DeepSeek-R1 exhibit early signs of style-
+sensitive reasoning. These findings reveal key
+limitations in current LLMs’ capacity for in-
+dividualized, adaptive reasoning, and position
+InMind as a step toward cognitively aligned
+human–AI interaction.","Human expert scores (3 experts) are reported only for the reflection-alignment task and only in a figure. 30 sessions, single subject."
