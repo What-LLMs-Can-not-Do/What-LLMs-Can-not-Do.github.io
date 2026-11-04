@@ -778,3 +778,34 @@ Cross-lingual tasks,,"Text, Multilinguality, Ethics, Politics, Robustness",When 
 Reasoning,,"Text, Multilinguality, Reasoning, Open-ended, Math",PluraMath: Extending Mathematical Reasoning Evaluation Beyond High-Resource Languages,Apache-2.0,"Hindi, Turkish, Polish, Ukrainian, Uzbek, Odia, Amharic, Greek, Kazakh, Czech, Hebrew, Serbian, Tatar, Slovak, Catalan, Chuvash, Upper Sorbian, Lower Sorbian, English, Spanish, German, Russian","Qwen3.5-0.8B, LFM2.5-1.2B-Thinking, Ouro-1.4B-Thinking, R1-Distill-Qwen-1.5B, Qwen3.5-2B, Ouro-2.6B-Thinking, Ministral-3-3B-Reasoning, Gemma-3-4B, Qwen3.5-4B, OLMo-3-7B-Think, R1-0528-Qwen3-8B, Ministral-3-8B-Reasoning, Qwen3.5-9B, Ministral-3-14B-Reasoning, gpt-oss-20b, Nemotron-3-Nano-30B-A3B-Reasoning, Gemma-4-31B, Qwen3.5-35B-A3B, R1-Distill-Llama-70B, gpt-oss-120b, Qwen3.5-122B-A10B, Qwen3-235B-A22B-Thinking, DeepSeek-V3.2, Kimi-K2.5, Claude-Haiku-4.5, Gemini-2.5-Flash, GPT-5.4",2026,https://arxiv.org/abs/2607.05992,https://huggingface.co/datasets/tum-nlp/PluraMath,https://tum-nlp.github.io/pluramath/,"Several level math reasoning benchmark extended to 18 underrepresented languages. For low levels, models are good, further: heavily drop for even English and other languages.",,yes,Humans,Humans,Humans,"Math task: Качки Дженет несуть по 16 яєць на день. Вона їсть три на сніданок щоранку і пече кекси для своїх друзів щодня, використовуючи чотири. Залишок вона щодня продає на фермерському ринку по 2 $ за свіже качине яйце. Скільки в доларах вона заробляє на фермерському ринку щодня?
 
 Expected Answer: \boxed{18}","Mathematical reasoning has become a central task for evaluating and tuning reasoning Large Language Models (LLMs), yet existing benchmarks remain heavily biased toward high-resource languages, with English and Chinese dominating both pre-training corpora and evaluation suites. The recently released PolyMath (Wang et al., 2025) dataset represents a significant step forward, yet its coverage is still limited to 18 only high-resource languages. To address this gap, we introduce PluraMath, an extension of PolyMath to 18 additional {underrepresented languages spanning 6 language families---ranging from mid-resource to extreme low-resource settings. We constructed the dataset through a human-curated pipeline, where native speakers thoroughly validated pre-computed translations. Using PluraMath, we then benchmark 27 reasoning LLMs across four model scales---small, mid-size, large, and closed-source ensembles---probing the multilingual mathematical reasoning capabilities of state-of-the-art models under diverse linguistic conditions. Our fine-grained analysis confirms a persistent gap in mathematical reasoning performance between high-resource and underrepresented languages, with stronger results largely associated with better instruction-following ability. We fully open-source our dataset, data acquisition pipeline, and evaluation framework, with the goal of lowering the barrier to multilingual benchmark development for underrepresented communities.",
+Reasoning,,"Text, Reasoning, Open-ended, Pragmatics, Semantics",How Far Can LLMs Improve from Experience? Measuring Test-Time Learning Ability in LLMs with Human Comparison,None listed,English,"GPT-4o, Claude-3.5-Sonnet, DeepSeek-V3, DeepSeek-R1, o1",2025,https://aclanthology.org/2025.emnlp-main.1304.pdf,https://github.com/Alice1998/Test-time-Learning,,"Semantic games (Twenty Questions, Who is Undercover, ...) measuring how fast LLMs learn from experience at test time; models improve less stably and more slowly than humans.",,yes,Humans,,,"Twenty Questions problems: the target is one of 157 candidate words (e.g. Airplane, Banana, Violin…). Ask up to 20 yes/no questions to identify it; after each game, the model can derive a policy from its past games and use it in the next ones.","As evaluation designs of large language mod-
+els may shape our trajectory toward artifi-
+cial general intelligence, comprehensive and
+forward-looking assessment is essential. Exist-
+ing benchmarks primarily assess static knowl-
+edge, while intelligence also entails the ability
+to rapidly learn from experience. To this end,
+we advocate for the evaluation of Test-time
+Learning, the capacity to improve performance
+in experience-based, reasoning-intensive tasks
+during test time. In this work, we propose se-
+mantic games as effective testbeds for evaluat-
+ing test-time learning, due to their resistance
+to saturation and inherent demand for strategic
+reasoning. We introduce an objective evalu-
+ation framework that compares model perfor-
+mance under both limited and cumulative ex-
+perience settings, and contains four forms of
+experience representation. To provide a com-
+parative baseline, we recruit eight human partic-
+ipants to complete the same task. Results show
+that LLMs exhibit measurable test-time learn-
+ing capabilities; however, their improvements
+are less stable under cumulative experience and
+progress more slowly than those observed in hu-
+mans. These findings underscore the potential
+of LLMs as general-purpose learning machines,
+while also revealing a substantial intellectual
+gap between models and humans, irrespective
+of how well LLMs perform on static bench-
+marks.","Human comparison (8 participants, 20 cumulative rounds) is on Twenty Questions only and is reported in a figure against Claude 3.5 Sonnet. Multi-turn game with self-derived policies, but no tool use; the authors explicitly frame it as non-agentic."
