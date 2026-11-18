@@ -7,6 +7,7 @@ const ORGANIZERS = [
   { name: "Hanna Shcharbakova", affiliation: "TU Munich" },
   { name: "JiWoo Hwang", affiliation: "TU Munich" },
   { name: "Sophie Henning", affiliation: "TU Munich" },
+  { name: "Sara Candussio", affiliation: "University of Trieste" },
   { name: "Marianne de Heer Kloots", affiliation: "University of Amsterdam" },
   { name: "Maike Züfle", affiliation: "KIT Karlsruhe" },
   { name: "Kathy Hämmerl", affiliation: "TU Munich" },

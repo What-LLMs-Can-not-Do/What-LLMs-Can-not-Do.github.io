@@ -64,7 +64,8 @@ export default function NavBar() {
             Home
           </NavLink>
           <NavLink to="/cfp" className={linkClass}>
-            CfP
+            <span className="md:hidden">CfP</span>
+            <span className="hidden md:inline">Call for Papers</span>
           </NavLink>
           <NavLink to="/table" className={linkClass}>
             Table
