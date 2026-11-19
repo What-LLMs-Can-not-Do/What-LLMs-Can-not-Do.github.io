@@ -778,3 +778,41 @@ Cross-lingual tasks,,"Text, Multilinguality, Ethics, Politics, Robustness",When 
 Reasoning,,"Text, Multilinguality, Reasoning, Open-ended, Math",PluraMath: Extending Mathematical Reasoning Evaluation Beyond High-Resource Languages,Apache-2.0,"Hindi, Turkish, Polish, Ukrainian, Uzbek, Odia, Amharic, Greek, Kazakh, Czech, Hebrew, Serbian, Tatar, Slovak, Catalan, Chuvash, Upper Sorbian, Lower Sorbian, English, Spanish, German, Russian","Qwen3.5-0.8B, LFM2.5-1.2B-Thinking, Ouro-1.4B-Thinking, R1-Distill-Qwen-1.5B, Qwen3.5-2B, Ouro-2.6B-Thinking, Ministral-3-3B-Reasoning, Gemma-3-4B, Qwen3.5-4B, OLMo-3-7B-Think, R1-0528-Qwen3-8B, Ministral-3-8B-Reasoning, Qwen3.5-9B, Ministral-3-14B-Reasoning, gpt-oss-20b, Nemotron-3-Nano-30B-A3B-Reasoning, Gemma-4-31B, Qwen3.5-35B-A3B, R1-Distill-Llama-70B, gpt-oss-120b, Qwen3.5-122B-A10B, Qwen3-235B-A22B-Thinking, DeepSeek-V3.2, Kimi-K2.5, Claude-Haiku-4.5, Gemini-2.5-Flash, GPT-5.4",2026,https://arxiv.org/abs/2607.05992,https://huggingface.co/datasets/tum-nlp/PluraMath,https://tum-nlp.github.io/pluramath/,"Several level math reasoning benchmark extended to 18 underrepresented languages. For low levels, models are good, further: heavily drop for even English and other languages.",,yes,Humans,Humans,Humans,"Math task: Качки Дженет несуть по 16 яєць на день. Вона їсть три на сніданок щоранку і пече кекси для своїх друзів щодня, використовуючи чотири. Залишок вона щодня продає на фермерському ринку по 2 $ за свіже качине яйце. Скільки в доларах вона заробляє на фермерському ринку щодня?
 
 Expected Answer: \boxed{18}","Mathematical reasoning has become a central task for evaluating and tuning reasoning Large Language Models (LLMs), yet existing benchmarks remain heavily biased toward high-resource languages, with English and Chinese dominating both pre-training corpora and evaluation suites. The recently released PolyMath (Wang et al., 2025) dataset represents a significant step forward, yet its coverage is still limited to 18 only high-resource languages. To address this gap, we introduce PluraMath, an extension of PolyMath to 18 additional {underrepresented languages spanning 6 language families---ranging from mid-resource to extreme low-resource settings. We constructed the dataset through a human-curated pipeline, where native speakers thoroughly validated pre-computed translations. Using PluraMath, we then benchmark 27 reasoning LLMs across four model scales---small, mid-size, large, and closed-source ensembles---probing the multilingual mathematical reasoning capabilities of state-of-the-art models under diverse linguistic conditions. Our fine-grained analysis confirms a persistent gap in mathematical reasoning performance between high-resource and underrepresented languages, with stronger results largely associated with better instruction-following ability. We fully open-source our dataset, data acquisition pipeline, and evaluation framework, with the goal of lowering the barrier to multilingual benchmark development for underrepresented communities.",
+Reasoning,,"Text, Reasoning, Long-context, Multiple-choice, Psychology, Discourse, Pragmatics",Beyond Survival: Evaluating LLMs in Social Deduction Games with Human-Aligned Strategies,None listed,Mandarin Chinese,"GPT-5, GPT-5-Mini, GPT-5-Nano, Gemini-2.5-Pro, Gemini-2.5-Flash, GPT-OSS-20B, Gemma-3-27B-IT, Qwen3-30B-A3B, Qwen3-32B, Qwq-32B, Llama-4-Scout-17B-16E-Instruct, DeepSeek-V3.1, DeepSeek-V3.2, DeepSeek-R1, Glm-4.5",2026,https://aclanthology.org/2026.emnlp-main.2208/,https://github.com/ZiruiSongBest/WereBench,https://huggingface.co/datasets/Yuan4629/WereBench,"Werewolf benchmark from 100+ hours of televised human gameplay; models are scored against winning players' speech and voting strategies, and about half score below 0.50",,no,,,,"你是9号，在听完2号悍跳及12号反水发言后，你对12号的身份最倾向于哪种判断？
+(You are Player 9. After hearing Player 2's fake Seer claim and Player 12's counter-claim, what is your most likely judgment of Player 12's role?)
+B. 他可能是狼人阵营的深水狼，通过反水立警来做好自己的身份。(A deep-cover wolf building credibility by counter-claiming.)
+D. 他可能只是普通村民，凭借敏锐的观察力识破了2号的悍跳。(A plain villager who saw through Player 2's fake claim.)
+E. 他是预言家牌，因夜间验过2号身份才敢反水立警。(The Seer, who checked Player 2 at night.)
+H. 他是一位拥有信息的强神（如女巫或禁言长老），因此有底气直接反击悍跳狼。(A strong power role with information, e.g. Witch or Silencing Elder.)
+Answer: H (9 options A–I in the full item)","Social deduction games like Werewolf combine
+language, reasoning, and strategy, providing a
+testbed for studying language and social in-
+telligence. However, most studies reduce the
+game to LLM-based self-play, yielding tem-
+plated utterances and anecdotal cases that over-
+look the richness of social gameplay. Evalu-
+ation further relies on coarse metrics such as
+survival time or subjective scoring due to the
+lack of quality reference data. To address these
+gaps, we curate a high-quality, human-verified,
+multilingual, and multimodal Werewolf dataset
+containing over 100 hours of video, 32.4M ut-
+terance tokens, and 15 rule variants. Based
+on this dataset, we propose a novel strategy-
+alignment evaluation that leverages the win-
+ning faction’s strategies as ground truth in two
+stages: 1) Speech evaluation, formulated as
+multiple-choice-style tasks that assess whether
+the model can adopt appropriate stances across
+five dimensions of social ability. 2) Decision
+evaluation, which assesses the model’s voting
+choices and opponent-role inferences. This
+framework enables a fine-grained evaluation of
+models’ linguistic and reasoning capabilities,
+while capturing their ability to generate strate-
+gically coherent gameplay. Our experiments
+show that state-of-the-art LLMs and VLMs ex-
+hibit diverse performance, with roughly half of
+the models in both modalities remaining below
+0.50 accuracy, revealing clear gaps in deception
+and counterfactual reasoning","No human score is reported; ground truth comes from the strategies of the winning human faction (MVP speech and votes) in real televised games (Panda Kill), human-verified. Released data are Chinese text only: 698 multiple-choice items (dataset/WereBench/WereBench.json) and 77 annotated game transcripts with roles, votes and logs (dataset/data); English examples in the paper are translations, and the paper reports 80+ games. Submitted as a borderline case for the maintainers to judge."
