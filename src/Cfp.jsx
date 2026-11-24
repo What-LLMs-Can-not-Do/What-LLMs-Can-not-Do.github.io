@@ -1,11 +1,10 @@
 import { Link } from "react-router-dom";
 
 const TIMELINE = [
-  { label: "Direct paper submission deadline", date: "February TBD, 2027" },
-  { label: "Pre-reviewed ARR commitment deadline", date: "February TBD, 2027" },
-  { label: "Notification of acceptance", date: "TBD, 2027" },
-  { label: "Camera-ready paper due", date: "TBD, 2027" },
-  { label: "Workshop", date: "Full day, one of May 9–14, 2027" },
+  { label: "Paper submission deadline", date: "February 15, 2027" },
+  { label: "Notification of acceptance", date: "March 5, 2027" },
+  { label: "Camera-ready paper due", date: "March 12, 2027" },
+  { label: "Workshop", date: "Full day, one of May 13–14, 2027" },
 ];
 
 export default function Cfp() {
@@ -127,9 +126,7 @@ export default function Cfp() {
       </section>
 
       <section className="mt-12 space-y-4">
-        <h2 className="text-lg font-semibold text-slate-900">
-          Tentative Timeline
-        </h2>
+        <h2 className="text-lg font-semibold text-slate-900">Timeline</h2>
         <p className="text-sm leading-relaxed text-slate-600">
           All deadlines are at 23:59, Anywhere on Earth.
         </p>

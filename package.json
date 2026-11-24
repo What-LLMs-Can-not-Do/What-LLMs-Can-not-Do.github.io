@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && cp dist/index.html dist/404.html",
+    "build": "vite build && cp dist/index.html dist/404.html && node scripts/prerender.mjs",
     "lint": "oxlint",
     "preview": "vite preview"
   },
