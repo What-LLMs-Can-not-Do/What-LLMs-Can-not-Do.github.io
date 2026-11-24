@@ -818,3 +818,29 @@ hibit diverse performance, with roughly half of
 the models in both modalities remaining below
 0.50 accuracy, revealing clear gaps in deception
 and counterfactual reasoning","Ground truth comes from the strategies of the winning human faction (MVP speech and votes) in real televised games (Panda Kill), human-verified. Released data are Chinese text only: 698 multiple-choice items (dataset/WereBench/WereBench.json) and 77 annotated game transcripts with roles, votes and logs (dataset/data); English examples in the paper are translations, and the paper reports 80+ games."
+Reasoning,,"Text, Reasoning, Lexicon, Semantics, Classification",NYT-Connections: A Deceptively Simple Text Classification Task that Stumps System-1 Thinkers,CC BY 4.0,English,"Claude-3.5-Sonnet, GPT-4, GPT-4o, Gemini-1.5-Pro, Llama-3-70B-Instruct, Llama-3.1-405B-Instruct",2025,https://aclanthology.org/2025.coling-main.134/,https://huggingface.co/datasets/tm21cy/NYT-Connections,https://arxiv.org/abs/2412.01621,358 word-grouping puzzles from NYT Connections built to penalize System-1 shortcuts; even GPT-4 trails human players by nearly 30%,,yes,Humans,Humans,,"Group these 16 words into 4 groups of 4 related words. Trap example: NORMAL, DRY, COMBINATION, OILY form ""Skin types"", but NORMAL, STANDARD, BENCHMARK tempt a ""Status quo"" group of three, which makes four complete groups impossible.","Large Language Models (LLMs) have shown
+impressive performance on various bench-
+marks, yet their ability to engage in delib-
+erate reasoning remains questionable. We
+present NYT-CONNECTIONS, a collection of
+358 simple word classification puzzles de-
+rived from the New York Times Connections
+game. This benchmark is designed to penalize
+quick, intuitive “System 1” thinking, isolating
+fundamental reasoning skills. We evaluated
+six recent LLMs, a simple machine learning
+heuristic, and humans across three configura-
+tions: single-attempt, multiple attempts with-
+out hints, and multiple attempts with contex-
+tual hints. Our findings reveal a significant
+performance gap: even top-performing LLMs
+like GPT-4 fall short of human performance
+by nearly 30%. Notably, advanced prompt-
+ing techniques such as Chain-of-Thought and
+Self-Consistency show diminishing returns as
+task difficulty increases. NYT-CONNECTIONS
+uniquely combines linguistic isolation, resis-
+tance to intuitive shortcuts, and regular updates
+to mitigate data leakage, offering a novel tool
+for assessing LLM reasoning capabilities.","Human baseline from 3 evaluators only
+A non-peer-reviewed 2025 leaderboard suggests newer reasoning models beat average (but not elite) human players"
