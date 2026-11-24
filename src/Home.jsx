@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import TopicsSection from "./TopicsSection.jsx";
 
 const logoSrc = `${import.meta.env.BASE_URL}logo_cropped.png`;
 
@@ -80,6 +81,8 @@ export default function Home() {
           . See you in Macau!
         </p>
       </section>
+
+      <TopicsSection />
 
       <section className="mt-12 space-y-4">
         <h2 className="text-lg font-semibold text-slate-900">Organizers</h2>
