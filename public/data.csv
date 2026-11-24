@@ -875,3 +875,36 @@ while also revealing a substantial intellectual
 gap between models and humans, irrespective
 of how well LLMs perform on static bench-
 marks.","Human comparison (8 participants, 20 cumulative rounds) is on Twenty Questions only and is reported in a figure against Claude 3.5 Sonnet. Multi-turn game with self-derived policies, but no tool use; the authors explicitly frame it as non-agentic."
+Reasoning,,"Text, Reasoning, Long-context, Open-ended, Psychology, Discourse, Pragmatics",InMind: Evaluating LLMs in Capturing and Applying Individual Human Reasoning Styles,None listed,Mandarin Chinese,"GPT-4o, o3-Mini, DeepSeek-R1, Qwq-32B, Qwen-2.5-Instruct-7B",2025,https://aclanthology.org/2025.emnlp-main.254.pdf,https://github.com/leroy9472/InMind,,"Annotated Mandarin Avalon games testing whether LLMs can apply a player's reasoning style; models struggle without strategy traces, while human experts stay accurate.",,yes,Humans,Humans,,"Fill in the masked player IDs in the subject's post-game reflection: ""[MASK] opposed the previous team and then formed an all-good team… I suspect [MASK] might be Merlin.""","LLMs have shown strong performance on
+human-centric reasoning tasks. While previ-
+ous evaluations have explored whether LLMs
+can infer intentions or detect deception, they
+often overlook the individualized reasoning
+styles that influence how people interpret and
+act in social contexts. Social deduction games
+(SDGs) provide a natural testbed for evaluating
+individualized reasoning styles, where differ-
+ent players may adopt diverse but contextually
+valid reasoning strategies under identical condi-
+tions. To address this, we introduce InMind, a
+cognitively grounded evaluation framework de-
+signed to assess whether LLMs can capture and
+apply personalized reasoning styles in SDGs.
+InMind enhances structured gameplay data
+with round-level strategy traces and post-game
+reflections, collected under both Observer and
+Participant modes. It supports four cognitively
+motivated tasks that jointly evaluate both static
+alignment and dynamic adaptation. As a case
+study, we apply InMind to the game Avalon,
+evaluating 11 state-of-the-art LLMs.1 General-
+purpose LLMs, even GPT-4o frequently rely on
+lexical cues, struggling to anchor reflections in
+temporal gameplay or adapt to evolving strate-
+gies. In contrast, reasoning-enhanced LLMs
+like DeepSeek-R1 exhibit early signs of style-
+sensitive reasoning. These findings reveal key
+limitations in current LLMs’ capacity for in-
+dividualized, adaptive reasoning, and position
+InMind as a step toward cognitively aligned
+human–AI interaction.","Human expert scores (3 experts) are reported only for the reflection-alignment task and only in a figure. 30 sessions, single subject."
