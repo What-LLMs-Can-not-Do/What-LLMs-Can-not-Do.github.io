@@ -844,3 +844,34 @@ tance to intuitive shortcuts, and regular updates
 to mitigate data leakage, offering a novel tool
 for assessing LLM reasoning capabilities.","Human baseline from 3 evaluators only
 A non-peer-reviewed 2025 leaderboard suggests newer reasoning models beat average (but not elite) human players"
+Reasoning,,"Text, Reasoning, Open-ended, Pragmatics, Semantics",How Far Can LLMs Improve from Experience? Measuring Test-Time Learning Ability in LLMs with Human Comparison,None listed,English,"GPT-4o, Claude-3.5-Sonnet, DeepSeek-V3, DeepSeek-R1, o1",2025,https://aclanthology.org/2025.emnlp-main.1304.pdf,https://github.com/Alice1998/Test-time-Learning,,"Semantic games (Twenty Questions, Who is Undercover, ...) measuring how fast LLMs learn from experience at test time; models improve less stably and more slowly than humans.",,yes,Humans,Humans,Not tested,"Twenty Questions problems: the target is one of 157 candidate words (e.g. Airplane, Banana, Violin…). Ask up to 20 yes/no questions to identify it; after each game, the model can derive a policy from its past games and use it in the next ones.","As evaluation designs of large language mod-
+els may shape our trajectory toward artifi-
+cial general intelligence, comprehensive and
+forward-looking assessment is essential. Exist-
+ing benchmarks primarily assess static knowl-
+edge, while intelligence also entails the ability
+to rapidly learn from experience. To this end,
+we advocate for the evaluation of Test-time
+Learning, the capacity to improve performance
+in experience-based, reasoning-intensive tasks
+during test time. In this work, we propose se-
+mantic games as effective testbeds for evaluat-
+ing test-time learning, due to their resistance
+to saturation and inherent demand for strategic
+reasoning. We introduce an objective evalu-
+ation framework that compares model perfor-
+mance under both limited and cumulative ex-
+perience settings, and contains four forms of
+experience representation. To provide a com-
+parative baseline, we recruit eight human partic-
+ipants to complete the same task. Results show
+that LLMs exhibit measurable test-time learn-
+ing capabilities; however, their improvements
+are less stable under cumulative experience and
+progress more slowly than those observed in hu-
+mans. These findings underscore the potential
+of LLMs as general-purpose learning machines,
+while also revealing a substantial intellectual
+gap between models and humans, irrespective
+of how well LLMs perform on static bench-
+marks.","Human comparison (8 participants, 20 cumulative rounds) is on Twenty Questions only and is reported in a figure against Claude 3.5 Sonnet. Multi-turn game with self-derived policies, but no tool use; the authors explicitly frame it as non-agentic."
