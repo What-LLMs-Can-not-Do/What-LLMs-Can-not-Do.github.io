@@ -781,3 +781,40 @@ Expected Answer: \boxed{18}","Mathematical reasoning has become a central task f
 General NLP tasks,,"Text, Bias, Robustness, Q&A, Psychology, Simulation of users",Fingerprinting LLMs through Survey Item Factor Correlation: A Case Study on Humor Style Questionnaire,None listed,English,"Llama-3.3-70B-Instruct, Llama-3.1-8B-Instruct, Mistral-7B-Instruct, Mistral-Large, Qwen2.5-72B-Instruct, Qwen2.5-7B-Instruct",2025,https://aclanthology.org/2025.emnlp-main.13/,https://openpsychometrics.org/_rawdata/,https://github.com/simon-muenker/LLM-Questionnaires,LLMs answer the Humor Styles Questionnaire; their item-factor correlations barely match humans (~0.03 vs. 0.82 between human subsamples) and none recover the four humor styles.,,yes,Not tested,Humans,Not tested,"For each of the statements below, please indicate how true each statement is for you. Response options: Never or very rarely true (1); Rarely true (2); Sometimes true (3); Often true (4); and Very often or always true (5). Respond only with the predicted class [(1), (2), (3), (4), (5)].
 
 Question: I laugh and joke a lot with my closest friends.","LLMs increasingly engage with psychological instruments, yet how they represent constructs internally remains poorly understood. We introduce a novel approach to “fingerprinting” LLMs through their factor correlation patterns on standardized psychological assessments to deepen the understanding of LLMs constructs representation. Using the Humor Style Questionnaire as a case study, we analyze how six LLMs represent and correlate humor-related constructs to survey participants. Our results show that they exhibit little similarity to human response patterns. In contrast, participants’ subsamples demonstrate remarkably high internal consistency. Exploratory graph analysis further confirms that no LLM successfully recovers the four constructs of the Humor Style Questionnaire. These findings suggest that despite advances in natural language capabilities, current LLMs represent psychological constructs in fundamentally different ways than humans, questioning the validity of application as human simulacra.",
+Reasoning,,"Text, Reasoning, Long-context, Multiple-choice, Psychology, Discourse, Pragmatics",Beyond Survival: Evaluating LLMs in Social Deduction Games with Human-Aligned Strategies,None listed,Mandarin Chinese,"GPT-5, GPT-5-Mini, GPT-5-Nano, Gemini-2.5-Pro, Gemini-2.5-Flash, GPT-OSS-20B, Gemma-3-27B-IT, Qwen3-30B-A3B, Qwen3-32B, Qwq-32B, Llama-4-Scout-17B-16E-Instruct, DeepSeek-V3.1, DeepSeek-V3.2, DeepSeek-R1, Glm-4.5",2026,https://aclanthology.org/2026.emnlp-main.2208/,https://github.com/ZiruiSongBest/WereBench,https://huggingface.co/datasets/Yuan4629/WereBench,"Werewolf benchmark from 100+ hours of televised human gameplay; models are scored against winning players' speech and voting strategies, and about half score below 0.50",,yes,Humans,Humans,Not tested,"你是9号，在听完2号悍跳及12号反水发言后，你对12号的身份最倾向于哪种判断？
+(You are Player 9. After hearing Player 2's fake Seer claim and Player 12's counter-claim, what is your most likely judgment of Player 12's role?)
+B. 他可能是狼人阵营的深水狼，通过反水立警来做好自己的身份。(A deep-cover wolf building credibility by counter-claiming.)
+D. 他可能只是普通村民，凭借敏锐的观察力识破了2号的悍跳。(A plain villager who saw through Player 2's fake claim.)
+E. 他是预言家牌，因夜间验过2号身份才敢反水立警。(The Seer, who checked Player 2 at night.)
+H. 他是一位拥有信息的强神（如女巫或禁言长老），因此有底气直接反击悍跳狼。(A strong power role with information, e.g. Witch or Silencing Elder.)
+Answer: H (9 options A–I in the full item)","Social deduction games like Werewolf combine language, reasoning, and strategy, providing a
+testbed for studying language and social in-
+telligence. However, most studies reduce the
+game to LLM-based self-play, yielding tem-
+plated utterances and anecdotal cases that over-
+look the richness of social gameplay. Evalu-
+ation further relies on coarse metrics such as
+survival time or subjective scoring due to the
+lack of quality reference data. To address these
+gaps, we curate a high-quality, human-verified,
+multilingual, and multimodal Werewolf dataset
+containing over 100 hours of video, 32.4M ut-
+terance tokens, and 15 rule variants. Based
+on this dataset, we propose a novel strategy-
+alignment evaluation that leverages the win-
+ning faction’s strategies as ground truth in two
+stages: 1) Speech evaluation, formulated as
+multiple-choice-style tasks that assess whether
+the model can adopt appropriate stances across
+five dimensions of social ability. 2) Decision
+evaluation, which assesses the model’s voting
+choices and opponent-role inferences. This
+framework enables a fine-grained evaluation of
+models’ linguistic and reasoning capabilities,
+while capturing their ability to generate strate-
+gically coherent gameplay. Our experiments
+show that state-of-the-art LLMs and VLMs ex-
+hibit diverse performance, with roughly half of
+the models in both modalities remaining below
+0.50 accuracy, revealing clear gaps in deception
+and counterfactual reasoning","Ground truth comes from the strategies of the winning human faction (MVP speech and votes) in real televised games (Panda Kill), human-verified. Released data are Chinese text only: 698 multiple-choice items (dataset/WereBench/WereBench.json) and 77 annotated game transcripts with roles, votes and logs (dataset/data); English examples in the paper are translations, and the paper reports 80+ games."
