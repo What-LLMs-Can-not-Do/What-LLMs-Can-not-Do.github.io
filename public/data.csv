@@ -954,3 +954,21 @@ demonstrates that DECRYPTO addresses a cru-
 cial gap in current reasoning and ToM evalua-
 tions, and paves the path towards better artifi-
 cial agents.","Multi-agent game setting, but no tool use; LLMs are evaluated as language-only players."
+Reasoning,,"Text, Multilinguality, Reasoning, Open-ended, Culture, Pragmatics, Semantics",Do You Get the Hint? Benchmarking LLMs on the Board Game Concept,CC BY-NC 4.0,"English, Dutch, French, Spanish","Llama-3.3-70B-Instruct, Llama-4-Maverick, Qwen2.5-72B-Instruct, DeepSeek-V3, Mistral-Small-24B-Instruct",2026,https://aclanthology.org/2026.findings-acl.1219/,https://huggingface.co/datasets/IneG/concept,,"Word-guessing board game probing abductive reasoning from abstract hints. Humans succeed over 90% of the time while no LLM exceeds 40%, dropping even further in non-English languages.",,yes,Humans,Humans,,"Hints: Category: Building, Construction, City (green, high-level). Additional green hint: Metal. Red high-level hint: Location, Country, Flag. Additional red hints: Blue, White, Red. Concept: ?","Large language models (LLMs) have achieved
+striking successes on many benchmarks, yet
+recent studies continue to expose fundamental
+weaknesses. In this paper, we introduce Con-
+cept, a simple word-guessing board game, as
+a benchmark for probing abductive reasoning.
+Our results show that this game, easily solved
+by humans (with a success rate of over 90%), is
+still very challenging for state-of-the-art LLMs
+(no model exceeds 40% success rate). Specifi-
+cally, we observe that LLMs struggle with in-
+terpreting other players’ strategic intents, and
+with correcting initial hypotheses given sequen-
+tial information updates. In addition, we extend
+the evaluation across multiple languages, and
+find that the LLM performance drops further in
+lower-resource languages (Dutch, French, and
+Spanish) compared to English.","Human baseline from real Board Game Arena game logs (~1,000 concepts per language)."
