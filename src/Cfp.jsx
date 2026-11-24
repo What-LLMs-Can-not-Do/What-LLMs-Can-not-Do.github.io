@@ -4,7 +4,7 @@ const TIMELINE = [
   { label: "Paper submission deadline", date: "February 15, 2027" },
   { label: "Notification of acceptance", date: "March 5, 2027" },
   { label: "Camera-ready paper due", date: "March 12, 2027" },
-  { label: "Workshop", date: "Full day, one of May 9–14, 2027" },
+  { label: "Workshop", date: "Full day, one of May 13–14, 2027" },
 ];
 
 export default function Cfp() {

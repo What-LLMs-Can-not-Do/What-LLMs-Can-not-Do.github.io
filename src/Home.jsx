@@ -41,14 +41,20 @@ export default function Home() {
             Browse the table
           </Link>
           <Link
+            to="/cfp"
+            className="inline-flex items-center rounded-md bg-slate-700 px-4 py-2 text-sm font-medium text-white hover:bg-slate-600"
+          >
+            Call for Papers
+          </Link>
+          <Link
             to="/contribute"
-            className="inline-flex items-center rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-800 hover:bg-slate-50"
+            className="inline-flex items-center rounded-md bg-slate-500 px-4 py-2 text-sm font-medium text-white hover:bg-slate-400"
           >
             Contribute
           </Link>
           <Link
             to="/subscribe"
-            className="inline-flex items-center rounded-md bg-[#1870E0] px-4 py-2 text-sm font-medium text-white hover:bg-[#1560C4]"
+            className="inline-flex items-center rounded-md bg-slate-400 px-4 py-2 text-sm font-medium text-white hover:bg-slate-300"
           >
             Subscribe
           </Link>
